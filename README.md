@@ -2,11 +2,11 @@ Secure Software System Assignment
 
 Group No. 4
 
-- Wong Ki Hurn,
-- Ong Ding Zhang,
-- Elvina Laurencia Ryanto,
-- Chellsea Vanesya Ong,
-- Yu Watanabe
+- Wong Ki Hurn, 364414
+- Ong Ding Zhang, 364964
+- Elvina Laurencia Ryanto, 372987
+- Chellsea Vanesya Ong, 377461
+- Yu Watanabe, 365660
 
 
 # SecureFin
