@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Shield,
@@ -28,14 +28,17 @@ import {
   ChevronRight,
   Menu,
   X,
-  Building
+  Building,
+  Fingerprint
 } from 'lucide-react';
 
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
+import { RegisterPage } from './components/RegisterPage';
 import { SecureFinLogo } from './components/SecureFinLogo';
 import { TransactionDetailsDrawer } from './components/TransactionDetailsDrawer';
 import { NewTransferModal } from './components/NewTransferModal';
+import { BiometricVerificationModal } from './components/BiometricVerificationModal';
 
 import {
   initialUserProfile,
@@ -46,11 +49,67 @@ import {
 } from './data';
 import { UserProfile, Transaction } from './types';
 import { playClickSound, playSuccessSound, playTransitionSound } from './utils/audio';
+import { auth } from './lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 
 export default function App() {
   // Authentication & View Flow State
-  const [pageState, setPageState] = useState<'landing' | 'login' | 'dashboard'>('landing');
+  const [pageState, setPageState] = useState<'landing' | 'login' | 'register' | 'dashboard'>('landing');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger' | 'payments' | 'insights' | 'settings'>('dashboard');
+
+  // Firebase auth client state
+  const [authToken, setAuthToken] = useState<string | null>(null);
+
+  const fetchUserData = async (token: string) => {
+    try {
+      const headers = { 'Authorization': `Bearer ${token}` };
+      const [profileRes, txRes, obligationsRes, sessionsRes, balancesRes] = await Promise.all([
+        fetch('/api/user/profile', { headers }),
+        fetch('/api/transactions', { headers }),
+        fetch('/api/scheduled-obligations', { headers }),
+        fetch('/api/sessions', { headers }),
+        fetch('/api/balances', { headers }),
+      ]);
+
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        setUserProfile(profile);
+      }
+      if (txRes.ok) {
+        const txs = await txRes.json();
+        setTransactions(txs);
+      }
+      if (obligationsRes.ok) {
+        const obs = await obligationsRes.json();
+        setScheduledObligations(obs);
+      }
+      if (sessionsRes.ok) {
+        const sess = await sessionsRes.json();
+        setSessions(sess);
+      }
+      if (balancesRes.ok) {
+        const bal = await balancesRes.json();
+        setBalances(bal);
+      }
+    } catch (err) {
+      console.error('Failed to load ledger data:', err);
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const token = await user.getIdToken();
+        setAuthToken(token);
+        setPageState('dashboard');
+        fetchUserData(token);
+      } else {
+        setAuthToken(null);
+        setPageState('landing');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // App Data State
   const [userProfile, setUserProfile] = useState<UserProfile>(initialUserProfile);
@@ -59,16 +118,17 @@ export default function App() {
   const [scheduledObligations, setScheduledObligations] = useState(initialScheduledObligations);
   const [insights] = useState(initialInsights);
 
-  // Dynamic Cash Flow / Liquidity State
+  // Dynamic Cash Flow / Liquidity State — loaded from Supabase, zero until API responds
   const [balances, setBalances] = useState({
-    operational: 254820.00,
-    vault: 1420000.00,
-    reserve: 8500000.00
+    operational: 0,
+    vault: 0,
+    reserve: 0,
   });
 
   // UI Interactive States
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showBiometricModal, setShowBiometricModal] = useState(false);
   const [cardFrozen, setCardFrozen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -105,12 +165,32 @@ export default function App() {
   };
 
   // Navigations
-  const handlePageChange = (state: 'landing' | 'login' | 'dashboard') => {
+  const handlePageChange = (state: 'landing' | 'login' | 'register' | 'dashboard') => {
     playTransitionSound();
     setPageState(state);
     if (state === 'dashboard') {
       setActiveTab('dashboard');
     }
+  };
+
+  const handleLogout = async () => {
+    playTransitionSound();
+    try {
+      await auth.signOut();
+    } catch (err) {
+      console.error('Logout error:', err);
+    }
+    setPageState('landing');
+  };
+
+  // Handle successful registration of user node
+  const handleRegisterSuccess = (profile: Partial<UserProfile>) => {
+    setUserProfile((prev) => ({
+      ...prev,
+      ...profile,
+    }));
+    triggerToast('Institutional identity registered and keys deployed successfully.');
+    handlePageChange('dashboard');
   };
 
   const handleTabChange = (tab: typeof activeTab) => {
@@ -120,62 +200,126 @@ export default function App() {
   };
 
   // Handle newly executed transfer
-  const handleNewTransfer = (
+  const handleNewTransfer = async (
     amount: number,
     recipientName: string,
     category: string,
     notes: string,
     accountName: string
   ) => {
-    // 1. Deduct correct balance
-    setBalances((prev) => {
-      if (accountName.includes('Operational')) {
-        return { ...prev, operational: prev.operational - amount };
-      }
-      if (accountName.includes('Vault')) {
-        return { ...prev, vault: prev.vault - amount };
-      }
-      return { ...prev, reserve: prev.reserve - amount };
-    });
-
-    // 2. Synthesize new Transaction item
-    const newTrx: Transaction = {
-      id: `TRX-${Math.floor(10000 + Math.random() * 90000)}`,
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-      time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    // 1. Synthesize request body
+    const transactionData = {
       description: recipientName,
       merchant: recipientName,
       category: category as any,
       amount: -amount,
-      status: 'Verified',
       notes: notes,
+      status: 'Verified' as any,
       attachmentName: 'Transfer_Receipt_Auto.pdf',
       attachmentSize: '450 KB',
-      iconName: 'payments'
+      iconName: 'payments' as any
     };
 
-    // 3. Insert to list
-    setTransactions((prev) => [newTrx, ...prev]);
-    setShowTransferModal(false);
-    triggerToast(`Settle transfer of $${amount.toLocaleString()} committed instantly.`);
+    try {
+      // If we have an auth token, make a real API call!
+      if (authToken) {
+        const response = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(transactionData)
+        });
+        
+        if (response.ok) {
+          const savedTx = await response.json();
+          setTransactions((prev) => [savedTx, ...prev]);
+        } else {
+          throw new Error('Sovereign ledger failed to write block.');
+        }
+      } else {
+        // Fallback for simulation
+        const newTrx: Transaction = {
+          id: `TRX-${Math.floor(10000 + Math.random() * 90000)}`,
+          date: new Date().toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+          time: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          ...transactionData
+        };
+        setTransactions((prev) => [newTrx, ...prev]);
+      }
+
+      // Deduct correct balance locally and persist to backend
+      setBalances((prev) => {
+        const next = (() => {
+          if (accountName.includes('Operational')) return { ...prev, operational: prev.operational - amount };
+          if (accountName.includes('Vault')) return { ...prev, vault: prev.vault - amount };
+          return { ...prev, reserve: prev.reserve - amount };
+        })();
+
+        // Persist updated balances to Supabase
+        if (authToken) {
+          fetch('/api/balances', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify(next),
+          }).catch((e) => console.error('Balance persist failed:', e));
+        }
+
+        return next;
+      });
+
+      setShowTransferModal(false);
+      triggerToast(`Settle transfer of $${amount.toLocaleString()} committed instantly.`);
+    } catch (err: any) {
+      console.error('New transfer error:', err);
+      triggerToast('Security transaction aborted: ' + err.message);
+    }
   };
 
   // Settings form saving
-  const handleSaveSettings = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSaveSettings = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     playSuccessSound();
     const formData = new FormData(e.currentTarget);
-    setUserProfile((prev) => ({
-      ...prev,
-      name: formData.get('name') as string || prev.name,
-      jobTitle: formData.get('jobTitle') as string || prev.jobTitle,
-      organization: formData.get('organization') as string || prev.organization,
-      defaultCurrency: formData.get('defaultCurrency') as string || prev.defaultCurrency,
-      language: formData.get('language') as string || prev.language,
+    const updatedProfile = {
+      name: formData.get('name') as string || userProfile.name,
+      jobTitle: formData.get('jobTitle') as string || userProfile.jobTitle,
+      organization: formData.get('organization') as string || userProfile.organization,
+      defaultCurrency: formData.get('defaultCurrency') as string || userProfile.defaultCurrency,
+      language: formData.get('language') as string || userProfile.language,
       emailAlerts: formData.get('emailAlerts') === 'on',
       twoFactorEnabled: formData.get('twoFactorEnabled') === 'on',
-    }));
-    triggerToast('Secured profile modifications saved to vault registry.');
+    };
+
+    try {
+      if (authToken) {
+        const response = await fetch('/api/user/profile', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(updatedProfile)
+        });
+
+        if (response.ok) {
+          const profile = await response.json();
+          setUserProfile(profile);
+        } else {
+          throw new Error('Sovereign vault registry update rejected.');
+        }
+      } else {
+        setUserProfile((prev) => ({
+          ...prev,
+          ...updatedProfile,
+        }));
+      }
+      triggerToast('Secured profile modifications saved to vault registry.');
+    } catch (err: any) {
+      console.error('Profile update error:', err);
+      triggerToast('Modification rejected: ' + err.message);
+    }
   };
 
   // Session revocation
@@ -199,15 +343,39 @@ export default function App() {
 
   // Landing page view
   if (pageState === 'landing') {
-    return <LandingPage onStartLogin={() => handlePageChange('login')} />;
+    return (
+      <LandingPage
+        onStartLogin={() => handlePageChange('login')}
+        onStartRegister={() => handlePageChange('register')}
+      />
+    );
   }
 
   // Login view
   if (pageState === 'login') {
     return (
       <LoginPage
-        onLoginSuccess={() => handlePageChange('dashboard')}
+        onLoginSuccess={(profile) => {
+          if (profile) setUserProfile(profile);
+          handlePageChange('dashboard');
+        }}
         onBackToHome={() => handlePageChange('landing')}
+        onGoToRegister={() => handlePageChange('register')}
+      />
+    );
+  }
+
+  // Register view
+  if (pageState === 'register') {
+    return (
+      <RegisterPage
+        onRegisterSuccess={(profile) => {
+          if (profile) setUserProfile(profile as any);
+          triggerToast('Institutional identity registered and keys deployed successfully.');
+          handlePageChange('dashboard');
+        }}
+        onBackToHome={() => handlePageChange('landing')}
+        onGoToLogin={() => handlePageChange('login')}
       />
     );
   }
@@ -338,7 +506,7 @@ export default function App() {
               <div className="text-[10px] text-slate-500 font-medium truncate">{userProfile.jobTitle}</div>
             </div>
             <button
-              onClick={() => handlePageChange('landing')}
+              onClick={handleLogout}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition"
               id="sidebar-btn-logout"
               title="Sign out of SecureFin Portal"
@@ -486,7 +654,7 @@ export default function App() {
                     New Vault Transfer
                   </button>
                   <button
-                    onClick={() => handlePageChange('landing')}
+                    onClick={handleLogout}
                     className="w-full py-3 bg-red-50 text-red-600 border border-red-100 hover:bg-red-100/50 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
                   >
                     <LogOut className="h-4 w-4" />
@@ -1389,6 +1557,33 @@ export default function App() {
                         <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-primary"></div>
                       </label>
                     </div>
+
+                    {/* Biometric Verification Simulation Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl gap-4 mt-2" id="biometric-simulation-row">
+                      <div className="flex gap-3">
+                        <div className="p-2 bg-blue-500/10 text-blue-600 rounded-lg h-fit shrink-0 border border-blue-500/15">
+                          <Fingerprint className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">Biometric Identity Signature</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            Associate your workstation's physical biometric sensor (Touch ID, Windows Hello, etc.) with your multi-sig ledger profile.
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClickSound();
+                          setShowBiometricModal(true);
+                        }}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1.5 self-end sm:self-center shrink-0 border border-slate-800 active:scale-95 cursor-pointer shadow-sm"
+                        id="btn-simulate-biometrics"
+                      >
+                        <Fingerprint className="h-3.5 w-3.5 text-blue-400" />
+                        Verify Biometric Hardware
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1561,6 +1756,18 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* RENDER MODAL: BIOMETRIC VERIFICATION */}
+      <AnimatePresence>
+        {showBiometricModal && (
+          <BiometricVerificationModal
+            onClose={() => setShowBiometricModal(false)}
+            onSuccess={() => {
+              triggerToast('Biometric identity verified: Master keys synchronized.');
+            }}
+          />
         )}
       </AnimatePresence>
 

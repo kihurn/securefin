@@ -6,12 +6,22 @@ import { playClickSound } from '../utils/audio';
 
 interface LandingPageProps {
   onStartLogin: () => void;
+  onStartRegister?: () => void;
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin }) => {
-  const handleAction = () => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin, onStartRegister }) => {
+  const handleLogin = () => {
     playClickSound();
     onStartLogin();
+  };
+
+  const handleRegister = () => {
+    playClickSound();
+    if (onStartRegister) {
+      onStartRegister();
+    } else {
+      onStartLogin();
+    }
   };
 
   const stats = [
@@ -53,14 +63,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin }) => {
               Vault Protocols
             </span>
             <button
-              onClick={handleAction}
+              onClick={handleLogin}
               className="px-5 py-2.5 rounded-full text-slate-700 hover:text-slate-900 text-sm font-semibold transition border border-slate-200 hover:bg-slate-50 active:scale-95"
               id="landing-btn-login"
             >
               Access Vault
             </button>
             <button
-              onClick={handleAction}
+              onClick={handleRegister}
               className="px-5 py-2.5 rounded-full bg-brand-primary text-white text-sm font-semibold hover:bg-brand-primary-container shadow-md shadow-brand-primary/10 transition active:scale-95"
               id="landing-btn-start"
             >
@@ -94,7 +104,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin }) => {
 
             <div className="flex flex-col sm:flex-row gap-4 pt-4" id="landing-hero-buttons">
               <button
-                onClick={handleAction}
+                onClick={handleLogin}
                 className="group flex items-center justify-center gap-2 px-8 py-4 bg-brand-primary text-white rounded-xl font-bold hover:bg-brand-primary-container transition shadow-lg shadow-brand-primary/20 active:scale-95"
                 id="landing-hero-getstarted"
               >
@@ -102,11 +112,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin }) => {
                 <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </button>
               <button
-                onClick={handleAction}
+                onClick={handleRegister}
                 className="flex items-center justify-center gap-2 px-8 py-4 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-xl font-bold transition active:scale-95"
                 id="landing-hero-learnmore"
               >
-                Download Security Whitepaper
+                Register Secured Account
                 <ExternalLink className="h-4 w-4 text-slate-400" />
               </button>
             </div>
@@ -184,7 +194,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin }) => {
 
               <div className="mt-5 text-center">
                 <button
-                  onClick={handleAction}
+                  onClick={handleLogin}
                   className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm rounded-xl transition shadow-lg shadow-slate-900/10"
                   id="landing-demo-btn"
                 >
@@ -264,7 +274,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin }) => {
               </p>
             </div>
             <button
-              onClick={handleAction}
+              onClick={handleRegister}
               className="px-8 py-4 bg-white text-slate-950 hover:bg-slate-100 font-bold text-base rounded-xl transition shadow-lg shrink-0 z-10 active:scale-95"
               id="landing-bottom-cta-btn"
             >
