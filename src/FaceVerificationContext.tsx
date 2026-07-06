@@ -62,6 +62,28 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
     checkBaselinePresence();
   }, [userProfile]);
 
+  // Helper: waits until a video element has real frame data (readyState >= HAVE_CURRENT_DATA)
+  // Resolves on 'canplay' event or times out after 5s to prevent hanging.
+  const waitForVideoReady = (video: HTMLVideoElement, timeoutMs = 5000): Promise<boolean> => {
+    return new Promise((resolve) => {
+      // Already has frame data — resolve immediately
+      if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+        resolve(true);
+        return;
+      }
+      const timer = setTimeout(() => {
+        video.removeEventListener('canplay', onReady);
+        console.warn('[Continuous Shield] Video ready timeout — readyState:', video.readyState);
+        resolve(false);
+      }, timeoutMs);
+      const onReady = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
+      video.addEventListener('canplay', onReady, { once: true });
+    });
+  };
+
   // Main Background Verification Routine
   const runBackgroundVerification = async (): Promise<boolean> => {
     if (!userProfile?.email || isLocked || isPausedByMultiFace) return true;
@@ -89,31 +111,37 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
 
       hiddenStreamRef.current = activeStream;
 
-      // 2. Attach stream to hidden video element
-      if (!hiddenVideoRef.current) {
-        const video = document.createElement('video');
-        video.width = 320;
-        video.height = 240;
-        video.autoplay = true;
-        video.muted = true;
-        video.playsInline = true;
-        hiddenVideoRef.current = video;
-      }
+      // 2. Always create a fresh video element each scan to avoid stale srcObject state
+      const video = document.createElement('video');
+      video.width = 320;
+      video.height = 240;
+      video.muted = true;
+      video.playsInline = true;
+      video.autoplay = true;
+      hiddenVideoRef.current = video;
 
-      hiddenVideoRef.current.srcObject = activeStream;
+      video.srcObject = activeStream;
 
-      // CRITICAL: Explicitly start video playback to transition readyState to HAVE_CURRENT_DATA (>= 2)
+      // 3. Explicitly call play() to start frame decoding
       try {
-        await hiddenVideoRef.current.play();
+        await video.play();
       } catch (playErr) {
         console.warn('[Continuous Shield] Playback start was interrupted or postponed:', playErr);
       }
 
-      // 3. Warm up camera buffer for 2 seconds (crucial for auto-exposure/focus accuracy)
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // 4. Wait until the video has actual decoded frame data (canplay event)
+      //    This is the critical fix — replaces the unreliable 2s blind timeout.
+      const isReady = await waitForVideoReady(video, 5000);
+      if (!isReady) {
+        console.warn('[Continuous Shield] Video stream did not become ready in time. Skipping scan.');
+        return true; // Skip silently, don't lock — camera may just be slow to init
+      }
 
-      // 4. Run multiple face detection first for privacy check
-      const isMultiFace = await detectMultipleFaces(hiddenVideoRef.current);
+      // 5. Small stabilization pause for auto-exposure/focus to settle
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // 6. Run multiple face detection first for privacy check
+      const isMultiFace = await detectMultipleFaces(video);
       setMultipleFacesDetected(isMultiFace);
 
       const multiFacePauseEnabled = localStorage.getItem(`fintrust_multi_face_pause_${emailKey}`) === 'true' || localStorage.getItem('fintrust_multi_face_pause_global') === 'true';
@@ -125,17 +153,16 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
         return false;
       }
 
-      // 5. Generate active face descriptor from current frame
-      const currentDescriptor = await generateFaceDescriptor(hiddenVideoRef.current);
+      // 7. Generate active face descriptor from current frame
+      const currentDescriptor = await generateFaceDescriptor(video);
 
       if (!currentDescriptor) {
         console.warn('[Continuous Shield] Background verification failed: No face detected in frame.');
-        // Lock session as no authorized face was found
         setIsLocked(true);
         return false;
       }
 
-      // 6. Compare descriptors using Euclidean distance
+      // 8. Compare descriptors using Euclidean distance
       const match = compareFaces(currentDescriptor, baselineDescriptor);
       if (!match) {
         console.warn('[Continuous Shield] Background verification failed: Face descriptor mismatch.');
@@ -148,7 +175,6 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
 
     } catch (error: any) {
       console.error('[Continuous Shield] Error running background camera verify:', error);
-      // If permission is denied or camera is blocked, lock for safety
       setMultipleFacesDetected(false);
       setIsLocked(true);
       return false;
@@ -164,6 +190,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
       }
       if (hiddenVideoRef.current) {
         hiddenVideoRef.current.srcObject = null;
+        hiddenVideoRef.current = null;
       }
     }
   };
