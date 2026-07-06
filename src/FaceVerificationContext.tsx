@@ -39,7 +39,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
   const [hasBaseline, setHasBaseline] = useState(false);
   const [isPausedByMultiFace, setIsPausedByMultiFace] = useState(false);
   const [multiFaceCountdown, setMultiFaceCountdown] = useState(3);
-  
+
   // Hidden video ref for background scanning
   const hiddenVideoRef = useRef<HTMLVideoElement | null>(null);
   const hiddenStreamRef = useRef<MediaStream | null>(null);
@@ -65,7 +65,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
   // Main Background Verification Routine
   const runBackgroundVerification = async (): Promise<boolean> => {
     if (!userProfile?.email || isLocked || isPausedByMultiFace) return true;
-    
+
     // Check baseline again
     const emailKey = userProfile.email.toLowerCase().trim();
     const stored = localStorage.getItem(`fintrust_face_baseline_${emailKey}`) || localStorage.getItem('fintrust_face_baseline_global');
@@ -75,17 +75,19 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
     }
 
     const baselineDescriptor = new Float32Array(JSON.parse(stored));
-    
+
     console.log('[Continuous Shield] Initiating background biometric sweep...');
-    
+
+    let activeStream: MediaStream | null = null;
+
     try {
       // 1. Request background video stream programmatically
-      const stream = await navigator.mediaDevices.getUserMedia({
+      activeStream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 240, facingMode: 'user' },
         audio: false,
       });
 
-      hiddenStreamRef.current = stream;
+      hiddenStreamRef.current = activeStream;
 
       // 2. Attach stream to hidden video element
       if (!hiddenVideoRef.current) {
@@ -98,8 +100,15 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
         hiddenVideoRef.current = video;
       }
 
-      hiddenVideoRef.current.srcObject = stream;
-      
+      hiddenVideoRef.current.srcObject = activeStream;
+
+      // CRITICAL: Explicitly start video playback to transition readyState to HAVE_CURRENT_DATA (>= 2)
+      try {
+        await hiddenVideoRef.current.play();
+      } catch (playErr) {
+        console.warn('[Continuous Shield] Playback start was interrupted or postponed:', playErr);
+      }
+
       // 3. Warm up camera buffer for 2 seconds (crucial for auto-exposure/focus accuracy)
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -113,18 +122,11 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
         console.warn('[Continuous Shield] Multi-face detected and auto-pause is enabled. Suspending workspace activity.');
         setIsPausedByMultiFace(true);
         playErrorSound();
-        // Clean up stream immediately
-        stream.getTracks().forEach((track) => track.stop());
-        hiddenStreamRef.current = null;
         return false;
       }
 
       // 5. Generate active face descriptor from current frame
       const currentDescriptor = await generateFaceDescriptor(hiddenVideoRef.current);
-
-      // Clean up webcam stream immediately after capture to release hardware lock (turns off recording LED)
-      stream.getTracks().forEach((track) => track.stop());
-      hiddenStreamRef.current = null;
 
       if (!currentDescriptor) {
         console.warn('[Continuous Shield] Background verification failed: No face detected in frame.');
@@ -150,6 +152,19 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
       setMultipleFacesDetected(false);
       setIsLocked(true);
       return false;
+    } finally {
+      // CRITICAL: Always release the webcam hardware lock in the finally block,
+      // ensuring the camera recording light turns off even if an error occurs.
+      if (activeStream) {
+        activeStream.getTracks().forEach((track) => track.stop());
+      }
+      if (hiddenStreamRef.current) {
+        hiddenStreamRef.current.getTracks().forEach((track) => track.stop());
+        hiddenStreamRef.current = null;
+      }
+      if (hiddenVideoRef.current) {
+        hiddenVideoRef.current.srcObject = null;
+      }
     }
   };
 
@@ -163,7 +178,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
       }
 
       console.log('[Continuous Shield] Session monitoring initialized (10s interval active).');
-      
+
       checkIntervalRef.current = setInterval(() => {
         runBackgroundVerification();
       }, 10000); // 10 seconds
@@ -199,7 +214,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
 
     if (isPausedByMultiFace) {
       setMultiFaceCountdown(3);
-      
+
       countdownInterval = setInterval(() => {
         setMultiFaceCountdown((prev) => {
           if (prev <= 1) {
@@ -267,7 +282,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
                 <div className="mx-auto h-16 w-16 bg-rose-500/10 border border-rose-500/20 text-rose-500 rounded-full flex items-center justify-center animate-pulse" id="multi-face-pause-icon">
                   <EyeOff className="h-8 w-8 text-rose-400" />
                 </div>
-                
+
                 <div className="space-y-2">
                   <h2 className="text-xl font-extrabold text-white tracking-tight">
                     Workspace Paused: Secondary Face Detected
@@ -289,7 +304,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
                     Resuming secure session in...
                   </span>
                 </div>
-                
+
                 <div className="pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-mono">
                   Workspace Security Suite Active
                 </div>
