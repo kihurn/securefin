@@ -20,6 +20,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [videoReady, setVideoReady] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [scanProgress, setScanProgress] = useState(0);
@@ -72,8 +73,11 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       });
 
       streamRef.current = stream;
+      setVideoReady(false);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Explicitly start playback so readyState advances to HAVE_CURRENT_DATA
+        videoRef.current.play().catch((e) => console.warn('[FaceRegistration] play() interrupted:', e));
       }
       setPermissionGranted(true);
     } catch (err: any) {
@@ -88,6 +92,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
   // 3. Stop camera helper
   const stopCamera = () => {
+    setVideoReady(false);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -206,6 +211,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
           autoPlay
           playsInline
           muted
+          onCanPlay={() => setVideoReady(true)}
           className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-350 ${
             permissionGranted && !isLoadingModels ? 'opacity-100' : 'opacity-0'
           }`}
@@ -297,7 +303,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
           <button
             type="button"
-            disabled={!permissionGranted || isLoadingModels || isScanning || baselineCaptured}
+            disabled={!permissionGranted || isLoadingModels || isScanning || baselineCaptured || !videoReady}
             onClick={handleCaptureBaseline}
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/10 flex items-center gap-1.5 cursor-pointer"
             id="face-btn-capture"
