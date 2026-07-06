@@ -111,14 +111,13 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
 
       hiddenStreamRef.current = activeStream;
 
-      // 2. Always create a fresh video element each scan to avoid stale srcObject state
-      const video = document.createElement('video');
-      video.width = 320;
-      video.height = 240;
-      video.muted = true;
-      video.playsInline = true;
-      video.autoplay = true;
-      hiddenVideoRef.current = video;
+      // 2. Use the persistent DOM-mounted video element (required for iOS Safari
+      //    to decode frames — off-DOM video elements are silently ignored by WebKit)
+      if (!hiddenVideoRef.current) {
+        console.error('[Continuous Shield] Hidden video element not mounted in DOM. Aborting scan.');
+        return true;
+      }
+      const video = hiddenVideoRef.current;
 
       video.srcObject = activeStream;
 
@@ -190,7 +189,7 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
       }
       if (hiddenVideoRef.current) {
         hiddenVideoRef.current.srcObject = null;
-        hiddenVideoRef.current = null;
+        // Do NOT null out hiddenVideoRef — it points to the DOM-mounted element
       }
     }
   };
@@ -269,6 +268,29 @@ export const FaceVerificationProvider: React.FC<FaceVerificationProviderProps> =
       {/* Primary Application Layout */}
       <div className="relative min-h-screen" id="session-wrapper">
         {children}
+
+        {/*
+          Persistent hidden video element — MUST be in the DOM for iOS Safari to decode
+          video frames. Off-DOM video elements are silently ignored by WebKit/iOS.
+          Kept invisible via absolute positioning off-screen.
+        */}
+        <video
+          ref={hiddenVideoRef}
+          muted
+          playsInline
+          autoPlay
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            top: '-9999px',
+            left: '-9999px',
+            width: '1px',
+            height: '1px',
+            opacity: 0,
+            pointerEvents: 'none',
+          }}
+          id="biometric-hidden-scanner"
+        />
 
         {/* Floating Privacy Warning Banner for Multiple Faces */}
         <AnimatePresence>
