@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, ShieldAlert, KeyRound, Loader2, RefreshCw, LogOut, CheckCircle2, UserCheck } from 'lucide-react';
 import { motion } from 'motion/react';
-import { generateFaceDescriptor, compareFaces, ensureModelsLoaded } from '../faceDetection';
+import { generateFaceDescriptor, compareFaces, ensureModelsLoaded, safeParseFaceDescriptor, calculateDistance, getConfidenceScore } from '../faceDetection';
 import { playClickSound, playSuccessSound, playErrorSound } from '../utils/audio';
 import { UserProfile } from '../types';
 
@@ -26,10 +26,14 @@ export const FaceLockOverlay: React.FC<FaceLockOverlayProps> = ({
   const [biometricError, setBiometricError] = useState('');
   const [unlockSuccess, setUnlockSuccess] = useState(false);
 
+  const isMountedRef = useRef(true);
+
   // 1. Initialize face-api and start camera on mount
   useEffect(() => {
+    isMountedRef.current = true;
     startFaceScanningFlow();
     return () => {
+      isMountedRef.current = false;
       stopCamera();
     };
   }, []);
@@ -42,6 +46,13 @@ export const FaceLockOverlay: React.FC<FaceLockOverlayProps> = ({
       setIsInitializingModels(false);
       
       await startCamera();
+      
+      // Auto-start continuous scanning loop for zero-click, secure unlocking
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          handleScanFaceAndUnlock(true);
+        }
+      }, 1000);
     } catch (err) {
       console.error('FaceLockOverlay models init error:', err);
       setIsInitializingModels(false);
@@ -82,58 +93,85 @@ export const FaceLockOverlay: React.FC<FaceLockOverlayProps> = ({
     }
   };
 
-  // 2. Scan face and match with baseline key
-  const handleScanFaceAndUnlock = async () => {
-    if (!videoRef.current || isScanning || unlockSuccess) return;
-    playClickSound();
+  // 2. Scan face and match with baseline key (continuous loop)
+  const handleScanFaceAndUnlock = async (isAuto = false) => {
+    if (!videoRef.current || (!isAuto && isScanning) || unlockSuccess) return;
+    if (!isAuto) playClickSound();
     setIsScanning(true);
     setBiometricError('');
 
     try {
-      // Warm up and extract descriptor
-      const currentDescriptor = await generateFaceDescriptor(videoRef.current);
-      if (!currentDescriptor) {
-        setIsScanning(false);
-        setBiometricError('Could not identify a valid face structure. Re-position and retry.');
-        playErrorSound();
-        return;
-      }
-
-      // Fetch stored baseline
+      // Fetch stored baseline first to make sure they actually have a baseline
       const emailKey = userProfile.email.toLowerCase().trim();
       const stored = localStorage.getItem(`fintrust_face_baseline_${emailKey}`) || localStorage.getItem('fintrust_face_baseline_global');
       
       if (!stored) {
         setIsScanning(false);
         setBiometricError('No biometric baseline signature exists on this machine. Please register face biometric in settings.');
-        playErrorSound();
+        if (!isAuto) playErrorSound();
         return;
       }
 
-      const baselineDescriptor = new Float32Array(JSON.parse(stored));
-      const match = compareFaces(currentDescriptor, baselineDescriptor);
-
-      if (!match) {
+      const baselineDescriptor = safeParseFaceDescriptor(stored);
+      if (!baselineDescriptor) {
         setIsScanning(false);
-        setBiometricError('Identity validation failed. Biometric signature mismatch.');
-        playErrorSound();
+        setBiometricError('Biometric template baseline is corrupted or malformed. Please enroll again in settings.');
+        if (!isAuto) playErrorSound();
+        return;
+      }
+      let matchFound = false;
+
+      // Keep polling the face detector every 350ms until we find a match or component unmounts
+      while (isMountedRef.current && !unlockSuccess) {
+        if (!videoRef.current) break;
+
+        let currentDescriptor: Float32Array | null = null;
+        try {
+          currentDescriptor = await generateFaceDescriptor(videoRef.current);
+        } catch (scanErr) {
+          console.warn('Continuous unlock scan attempt failed (will retry):', scanErr);
+        }
+
+        if (currentDescriptor) {
+          const distance = calculateDistance(currentDescriptor, baselineDescriptor);
+          const score = getConfidenceScore(distance);
+          const match = distance <= 0.40; // matchThreshold
+          if (match) {
+            matchFound = true;
+            break; // Valid matched face!
+          } else {
+            setBiometricError(`Face detected, but biometric signature mismatch (Confidence: ${score}%). Please align face clearly.`);
+          }
+        } else {
+          setBiometricError('Scanning... Position your face clearly inside the scanner frame.');
+        }
+
+        // Wait a short duration between frame analyses to prevent thread locks
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+
+      if (!isMountedRef.current) {
         return;
       }
 
-      // Match Successful!
-      setUnlockSuccess(true);
-      setIsScanning(false);
-      playSuccessSound();
-      stopCamera();
+      if (matchFound) {
+        // Match Successful!
+        setUnlockSuccess(true);
+        setIsScanning(false);
+        playSuccessSound();
+        stopCamera();
 
-      setTimeout(() => {
-        onUnlock();
-      }, 1000);
+        setTimeout(() => {
+          onUnlock();
+        }, 1000);
+      } else {
+        setIsScanning(false);
+      }
 
-    } catch (err) {
+    } catch (err: any) {
       console.error('Unlock error:', err);
       setIsScanning(false);
-      setBiometricError('An unexpected internal cryptographic processing error occurred.');
+      setBiometricError(err?.message || 'An unexpected internal cryptographic processing error occurred.');
       playErrorSound();
     }
   };

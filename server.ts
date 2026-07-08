@@ -35,8 +35,39 @@ const normalizeUser = (u: any) => ({
   balanceOperational: u.balance_operational,
   balanceVault: u.balance_vault,
   balanceReserve: u.balance_reserve,
-  faceDescriptor: u.face_descriptor ? JSON.parse(u.face_descriptor) : undefined,
+  faceDescriptor: u.face_descriptor,
 });
+
+// Robust face descriptor parser to completely eliminate NaN issues and double stringification
+function safeParseDescriptor(input: any): number[] | null {
+  if (!input) return null;
+  let parsed = input;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (e) {
+      console.warn("[safeParseDescriptor] Failed first-pass parse:", e.message);
+      return null;
+    }
+  }
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch (e) {
+      console.warn("[safeParseDescriptor] Failed second-pass parse:", e.message);
+      return null;
+    }
+  }
+  if (Array.isArray(parsed)) {
+    const numArr = parsed.map(v => typeof v === 'number' ? v : parseFloat(v));
+    if (numArr.some(isNaN)) {
+      console.warn("[safeParseDescriptor] Parsed array contains NaN values");
+      return null;
+    }
+    return numArr;
+  }
+  return null;
+}
 
 const normalizeTransaction = (t: any) => ({
   id: t.id,
@@ -206,9 +237,8 @@ const defaultScheduledObligations = [
   }
 ];
 
-export const app = express();
-
 async function startServer() {
+  const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
@@ -492,7 +522,7 @@ async function startServer() {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Identity Authorization</title>
+  <title>Sovereign Identity Authorization</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
@@ -552,7 +582,7 @@ async function startServer() {
         const googleAccessToken = credential.accessToken;
 
         document.getElementById('auth-title').textContent = "Verification Successful";
-        document.getElementById('auth-subtitle').textContent = "Identity has been synchronized with the FinTrust ledger.";
+        document.getElementById('auth-subtitle').textContent = "Sovereign Identity has been synchronized with the FinTrust ledger.";
         document.getElementById('icon-container').className = "p-3 bg-green-500/10 rounded-xl text-green-400";
         document.getElementById('icon-container').innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>\`;
 
@@ -616,7 +646,7 @@ async function startServer() {
   // Custom authentication endpoints (failsafe fallback for email/password)
   app.post("/api/auth/register-custom", async (req, res) => {
     try {
-      const { email, password, name, jobTitle, organization, twoFactorEnabled, role, faceDescriptor } = req.body;
+      const { email, password, name, jobTitle, organization, twoFactorEnabled, role } = req.body;
       if (!email || !password || !name) {
         return res.status(400).json({ error: "Missing required registration parameters." });
       }
@@ -630,7 +660,7 @@ async function startServer() {
       if (fetchError) throw fetchError;
 
       if (existingUsers && existingUsers.length > 0) {
-        return res.status(400).json({ error: "Identity profile for this email is already registered." });
+        return res.status(400).json({ error: "Sovereign identity node for this email is already registered." });
       }
 
       // Hash password
@@ -661,7 +691,7 @@ async function startServer() {
           email_alerts: true,
           push_notifications: false,
           sms_marketing: false,
-          face_descriptor: faceDescriptor ? JSON.stringify(faceDescriptor) : null,
+          face_descriptor: req.body.faceDescriptor || null,
         })
         .select()
         .single();
@@ -718,7 +748,7 @@ async function startServer() {
       if (fetchError) throw fetchError;
 
       if (!users || users.length === 0) {
-        return res.status(401).json({ error: "Identity profile not found." });
+        return res.status(401).json({ error: "Sovereign identity node not found." });
       }
 
       const user = users[0];
@@ -742,13 +772,13 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Custom login failed:", error);
-      res.status(500).json({ error: "Identity verification failed.", details: error.message });
+      res.status(500).json({ error: "Sovereign identity gateway verification failed.", details: error.message });
     }
   });
 
   app.post("/api/auth/login-biometric", async (req, res) => {
     try {
-      const { email } = req.body;
+      const { email, faceDescriptor } = req.body;
       if (!email) {
         return res.status(400).json({ error: "Missing identity email for biometric authentication." });
       }
@@ -764,10 +794,41 @@ async function startServer() {
       if (fetchError) throw fetchError;
 
       if (!users || users.length === 0) {
-        return res.status(401).json({ error: "Identity profile not found." });
+        return res.status(401).json({ error: "Sovereign identity node not found." });
       }
 
       const user = users[0];
+
+      // Verify the face_descriptor if it is present in Supabase for this user
+      if (user.face_descriptor) {
+        if (!faceDescriptor) {
+          return res.status(400).json({ error: "No face descriptor provided for verification. Biometric login requires active facial scan." });
+        }
+
+        const dbDescriptor = safeParseDescriptor(user.face_descriptor);
+        const reqDescriptor = safeParseDescriptor(faceDescriptor);
+
+        if (!dbDescriptor || !reqDescriptor || dbDescriptor.length !== 128 || reqDescriptor.length !== 128) {
+          console.warn("[Biometric Login] Template dimension mismatch or malformed signatures:", 
+            "db length:", dbDescriptor ? dbDescriptor.length : "null",
+            "req length:", reqDescriptor ? reqDescriptor.length : "null"
+          );
+          return res.status(400).json({ error: "Biometric template dimension mismatch. Please enroll again." });
+        }
+
+        // Calculate Euclidean distance
+        let sumSquareDiff = 0;
+        for (let i = 0; i < dbDescriptor.length; i++) {
+          const diff = dbDescriptor[i] - reqDescriptor[i];
+          sumSquareDiff += diff * diff;
+        }
+        const distance = Math.sqrt(sumSquareDiff);
+        console.log(`[Biometric Login] Face match distance calculated: ${distance.toFixed(4)} (Threshold: <= 0.48)`);
+
+        if (distance > 0.48) {
+          return res.status(401).json({ error: "Biometric signature verification failed. Face does not match registered baseline." });
+        }
+      }
 
       // Generate Custom token and authorize
       const token = generateCustomToken({ uid: user.uid, email: user.email, name: user.name });
@@ -778,7 +839,7 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Biometric login failed:", error);
-      res.status(500).json({ error: "Biometric verification failed.", details: error.message });
+      res.status(500).json({ error: "Biometric sovereign gateway verification failed.", details: error.message });
     }
   });
 
@@ -825,7 +886,7 @@ async function startServer() {
             email_alerts: true,
             push_notifications: false,
             sms_marketing: false,
-            face_descriptor: body.faceDescriptor ? JSON.stringify(body.faceDescriptor) : null,
+            face_descriptor: body.faceDescriptor || null,
           })
           .select()
           .single();
@@ -879,7 +940,7 @@ async function startServer() {
       res.json(normalizeUser(data));
     } catch (error: any) {
       console.error("Fetch profile failed:", error);
-      res.status(500).json({ error: "Failed to fetch profile data." });
+      res.status(500).json({ error: "Failed to fetch sovereign profile data." });
     }
   });
 
@@ -891,20 +952,25 @@ async function startServer() {
 
       console.log("[DEBUG UPDATE PROFILE] Updating uid:", uid, "with body:", body);
 
+      const updateData: any = {
+        name: body.name,
+        job_title: body.jobTitle,
+        organization: body.organization,
+        two_factor_enabled: body.twoFactorEnabled,
+        default_currency: body.defaultCurrency,
+        language: body.language,
+        email_alerts: body.emailAlerts,
+        push_notifications: body.pushNotifications,
+        sms_marketing: body.smsMarketing,
+      };
+
+      if (body.faceDescriptor !== undefined) {
+        updateData.face_descriptor = body.faceDescriptor;
+      }
+
       const { data, error } = await supabase
         .from('users')
-        .update({
-          name: body.name,
-          job_title: body.jobTitle,
-          organization: body.organization,
-          two_factor_enabled: body.twoFactorEnabled,
-          default_currency: body.defaultCurrency,
-          language: body.language,
-          email_alerts: body.emailAlerts,
-          push_notifications: body.pushNotifications,
-          sms_marketing: body.smsMarketing,
-          face_descriptor: body.faceDescriptor ? JSON.stringify(body.faceDescriptor) : undefined,
-        })
+        .update(updateData)
         .eq('uid', uid)
         .select()
         .single();
@@ -916,7 +982,35 @@ async function startServer() {
       res.json(normalizeUser(data));
     } catch (error: any) {
       console.error("Update profile failed:", error);
-      res.status(500).json({ error: "Failed to update profile data.", details: error.message });
+      res.status(500).json({ error: "Failed to update sovereign profile node.", details: error.message });
+    }
+  });
+
+  // Update user biometrics
+  app.post("/api/user/biometrics", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const uid = req.firebaseUser!.uid;
+      const { faceDescriptor } = req.body;
+
+      console.log("[DEBUG UPDATE BIOMETRICS] Updating uid:", uid);
+
+      const { data, error } = await supabase
+        .from('users')
+        .update({ face_descriptor: faceDescriptor })
+        .eq('uid', uid)
+        .select()
+        .single();
+
+      if (error || !data) {
+        console.error("[DEBUG UPDATE BIOMETRICS ERROR] error:", error);
+        return res.status(404).json({ error: "Biometric registration update failed.", details: error?.message });
+      }
+
+      logSecurityEvent('Biometric Enrollment', { uid, success: true });
+      res.json(normalizeUser(data));
+    } catch (error: any) {
+      console.error("Biometric registration failed:", error);
+      res.status(500).json({ error: "Failed to securely save biometric enrollment data.", details: error.message });
     }
   });
 
@@ -1128,11 +1222,9 @@ async function startServer() {
   // Global Error Shielding Middleware to prevent Information Disclosure
   app.use(errorHandling);
 
-  if (!process.env.VERCEL) {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`[SecureFin Server] Running on port ${PORT}`);
-    });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`[SecureFin Server] Running on port ${PORT}`);
+  });
 }
 
 startServer();

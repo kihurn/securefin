@@ -49,17 +49,22 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
     }
   };
 
-  const handleBiometricSuccess = async () => {
+  const handleBiometricSuccess = async (descriptor?: Float32Array) => {
     setIsLoading(true);
     setErrorMessage('');
     setShowLoginBiometricModal(false);
     try {
+      const faceDescriptorStr = descriptor ? JSON.stringify(Array.from(descriptor)) : null;
+
       const response = await fetch('/api/auth/login-biometric', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ email: selectedBiometricEmail })
+        body: JSON.stringify({ 
+          email: selectedBiometricEmail,
+          faceDescriptor: faceDescriptorStr
+        })
       });
 
       if (!response.ok) {
@@ -74,7 +79,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
     } catch (error: any) {
       console.error('Biometric verification failed:', error);
       setIsLoading(false);
-      setErrorMessage(error.message || 'Biometric authentication rejected.');
+      setErrorMessage(error.message || 'Sovereign biometric authentication rejected.');
       playErrorSound();
     }
   };
@@ -100,7 +105,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
       });
 
       if (!response.ok) {
-        throw new Error('Failed to synchronize identity profile with the local registry.');
+        throw new Error('Failed to synchronize sovereign identity node with the ledger.');
       }
 
       const userProfile = await response.json();
@@ -160,7 +165,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Invalid credentials or validation failed.');
+        throw new Error(errData.error || 'Invalid credentials or sovereign node validation failed.');
       }
 
       setIsLoading(false);

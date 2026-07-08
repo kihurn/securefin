@@ -177,12 +177,13 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
     setStep('biometrics');
   };
 
-  const handleFinalRegistration = async (descriptor: Float32Array) => {
+  const handleFinalRegistration = async (descriptor?: Float32Array) => {
     setIsLoading(true);
     setErrorMessage('');
 
+    const faceDescriptorStr = descriptor ? JSON.stringify(Array.from(descriptor)) : null;
+
     try {
-      const numericArray = Array.from(descriptor);
       if (googleUser) {
         // Handle Google sign up sync
         const response = await fetch('/api/auth/sync', {
@@ -197,12 +198,12 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
             organization: organization || 'FinTrust Global Node',
             twoFactorEnabled: twoFactorEnabled,
             avatarUrl: googleUser.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(googleUser.name)}`,
-            faceDescriptor: numericArray,
+            faceDescriptor: faceDescriptorStr,
           })
         });
 
         if (!response.ok) {
-          throw new Error('Failed to synchronize identity profile with the database ledger.');
+          throw new Error('Failed to synchronize sovereign identity node with the database ledger.');
         }
 
         const profile = await response.json();
@@ -223,13 +224,13 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
             jobTitle: jobTitle,
             organization: organization,
             twoFactorEnabled: twoFactorEnabled,
-            faceDescriptor: numericArray,
+            faceDescriptor: faceDescriptorStr,
           })
         });
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to synchronize identity profile with the database ledger.');
+          throw new Error(errorData.error || 'Failed to synchronize sovereign identity node with the database ledger.');
         }
 
         const { profile, token } = await response.json();
@@ -287,7 +288,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               Create Secured Registry Profile
             </h2>
             <p className="text-xs text-slate-400 leading-normal max-w-sm mx-auto">
-              Initialize your secure profile and configure system access settings.
+              Initialize a sovereign institutional node and deploy master access key signatures to secure trust reserves.
             </p>
           </div>
 
@@ -441,7 +442,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl z-50 space-y-3">
                     <Loader2 className="h-8 w-8 text-indigo-400 animate-spin" />
                     <span className="text-xs font-mono text-slate-300 font-bold uppercase tracking-wider text-center">
-                      Deploying Secure Profile...
+                      Deploying Sovereign Node...
                     </span>
                     <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
                       Synchronizing ledger authority
@@ -731,7 +732,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
 
         {/* Footnote */}
         <p className="mt-6 text-center text-[10px] text-slate-500 leading-normal" id="register-disclaimer">
-          SecureFin operates under industry-standard cryptographic guidelines. All authentication credentials are encrypted.
+          SecureFin operates under Swiss Financial Secrecy Guidelines (FISA). Institutional keys remain sovereign.
         </p>
       </div>
     </div>

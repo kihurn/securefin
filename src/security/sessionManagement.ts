@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 
-const SERVER_SECRET = process.env.JWT_SECRET || 'fintrust-vault-secret-key-1337-abc';
+const SERVER_SECRET = process.env.JWT_SECRET || 'fintrust-sovereign-node-secret-key-1337-abc';
 
 /**
  * Generates a signed custom token (JWT) with secure payload.

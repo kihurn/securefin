@@ -20,15 +20,17 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
-  const [videoReady, setVideoReady] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [scanProgress, setScanProgress] = useState(0);
   const [baselineCaptured, setBaselineCaptured] = useState<boolean>(false);
   const [capturedDescriptor, setCapturedDescriptor] = useState<Float32Array | null>(null);
 
+  const isMountedRef = useRef(true);
+
   // 1. Load face-api models on mount
   useEffect(() => {
+    isMountedRef.current = true;
     let active = true;
     async function init() {
       try {
@@ -51,6 +53,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
     return () => {
       active = false;
+      isMountedRef.current = false;
       stopCamera();
     };
   }, []);
@@ -73,18 +76,15 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       });
 
       streamRef.current = stream;
-      setVideoReady(false);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        // Explicitly start playback so readyState advances to HAVE_CURRENT_DATA
-        videoRef.current.play().catch((e) => console.warn('[FaceRegistration] play() interrupted:', e));
       }
       setPermissionGranted(true);
     } catch (err: any) {
       console.error('Webcam permission denied or unavailable:', err);
       setPermissionGranted(false);
       setErrorMessage(
-        'Webcam access is required for facial biometric validation. Please grant permission in your browser.'
+        'Webcam access is required for Sovereign Facial biometric validation. Please grant permission in your browser.'
       );
       playErrorSound();
     }
@@ -92,7 +92,6 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
   // 3. Stop camera helper
   const stopCamera = () => {
-    setVideoReady(false);
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -102,7 +101,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
     }
   };
 
-  // 4. Capture baseline profile
+  // 4. Capture baseline profile (continuous scan until found)
   const handleCaptureBaseline = async () => {
     if (!videoRef.current || isScanning || baselineCaptured) return;
     playClickSound();
@@ -111,27 +110,48 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
     setScanProgress(10);
 
     try {
-      // Simulate high-tech sweep progress visually
+      // Animate the progress bar up and down to show an active scanning laser sweep
+      let progressDir = 1;
       const progressInterval = setInterval(() => {
         setScanProgress((prev) => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return 90;
-          }
-          return prev + 15;
+          if (prev >= 85) progressDir = -1;
+          if (prev <= 15) progressDir = 1;
+          return prev + (progressDir * 5);
         });
-      }, 150);
+      }, 120);
 
-      // Perform real face-api descriptor extraction on the live video frame
-      const descriptor = await generateFaceDescriptor(videoRef.current);
-      
+      let descriptor: Float32Array | null = null;
+
+      // Keep polling the face detector every 300ms until we successfully get a descriptor
+      while (isMountedRef.current) {
+        if (!videoRef.current) break;
+        
+        try {
+          descriptor = await generateFaceDescriptor(videoRef.current);
+        } catch (scanErr) {
+          console.warn('Continuous scanning attempt failed (will retry):', scanErr);
+        }
+
+        if (descriptor) {
+          break; // Successfully got a face descriptor!
+        }
+
+        // Wait a short duration between frame analyses to prevent thread locks
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+
       clearInterval(progressInterval);
+
+      // If the component was unmounted or scanning was cancelled, abort
+      if (!isMountedRef.current) {
+        return;
+      }
 
       if (!descriptor) {
         setScanProgress(0);
         setIsScanning(false);
         setErrorMessage(
-          'No face detected. Please position your face clearly in the scanning frame with good lighting.'
+          'Scanning aborted. Please position your face clearly in the scanning frame with good lighting and try again.'
         );
         playErrorSound();
         return;
@@ -152,14 +172,14 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       
       // Fire callback to register flow
       setTimeout(() => {
-        onCaptureComplete(descriptor);
+        onCaptureComplete(descriptor!);
       }, 1200);
 
     } catch (err: any) {
       console.error('Facial enrollment error:', err);
       setScanProgress(0);
       setIsScanning(false);
-      setErrorMessage('An unexpected error occurred during biometric key generation.');
+      setErrorMessage(err?.message || 'An unexpected error occurred during biometric key generation.');
       playErrorSound();
     }
   };
@@ -169,7 +189,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       <div className="text-center space-y-2">
         <h3 className="font-extrabold text-white text-base flex items-center justify-center gap-2">
           <Sparkles className="h-4.5 w-4.5 text-indigo-400" />
-          Face Biometrics Setup
+          Sovereign Face Biometrics Setup
         </h3>
         <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
           Enroll your workstation facial node identity to activate continuous, browser-secure session shielding.
@@ -211,7 +231,6 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
           autoPlay
           playsInline
           muted
-          onCanPlay={() => setVideoReady(true)}
           className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-350 ${
             permissionGranted && !isLoadingModels ? 'opacity-100' : 'opacity-0'
           }`}
@@ -303,7 +322,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
 
           <button
             type="button"
-            disabled={!permissionGranted || isLoadingModels || isScanning || baselineCaptured || !videoReady}
+            disabled={!permissionGranted || isLoadingModels || isScanning || baselineCaptured}
             onClick={handleCaptureBaseline}
             className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/10 flex items-center gap-1.5 cursor-pointer"
             id="face-btn-capture"

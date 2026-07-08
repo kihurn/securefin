@@ -87,7 +87,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin, onStartR
           <div className="lg:col-span-7 space-y-8" id="landing-hero-text">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 border border-slate-200 rounded-full" id="landing-hero-badge">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-xs font-mono font-semibold text-slate-600 tracking-wider">SECUREFIN v4.2 LIVE</span>
+              <span className="text-xs font-mono font-semibold text-slate-600 tracking-wider">SECUREFIN v5.1 LIVE</span>
             </div>
             
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-950 leading-[1.1]" id="landing-hero-heading">
@@ -292,7 +292,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin, onStartR
             <span className="font-mono font-bold text-slate-700">&copy; 2026 SecureFin Technologies Inc.</span>
           </div>
           <div className="flex flex-wrap justify-center gap-6 font-medium" id="landing-footer-links">
-            <span className="hover:text-slate-900 cursor-pointer">Security Protocol v4.2</span>
+            <span className="hover:text-slate-900 cursor-pointer">Security Protocol v5.1</span>
             <span className="hover:text-slate-900 cursor-pointer">Service Level Agreement</span>
             <span className="hover:text-slate-900 cursor-pointer">Regulatory Disclosures</span>
             <span className="hover:text-slate-900 cursor-pointer">Privacy Policy</span>

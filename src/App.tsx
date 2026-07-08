@@ -38,8 +38,7 @@ import {
   AlertTriangle,
   Cpu,
   Layers,
-  Camera,
-  EyeOff
+  Camera
 } from 'lucide-react';
 
 import { LandingPage } from './components/LandingPage';
@@ -51,6 +50,7 @@ import { NewTransferModal } from './components/NewTransferModal';
 import { BiometricVerificationModal } from './components/BiometricVerificationModal';
 import { FaceVerificationProvider } from './FaceVerificationContext';
 import { FaceEnrollmentModal } from './components/FaceEnrollmentModal';
+import { FaceVerificationSettingsRow } from './components/FaceVerificationSettingsRow';
 
 import {
   initialUserProfile,
@@ -81,7 +81,7 @@ export default function App() {
       let profileRes = await fetch('/api/user/profile', { headers });
       
       if (profileRes.status === 404) {
-        console.log('User profile not found. Triggering identity synchronization...');
+        console.log('User profile not found. Triggering sovereign identity synchronization...');
         const syncRes = await fetch('/api/auth/sync', {
           method: 'POST',
           headers: {
@@ -104,11 +104,6 @@ export default function App() {
       if (profileRes.ok) {
         const profile = await profileRes.json();
         setUserProfile(profile);
-        if (profile.faceDescriptor && profile.email) {
-          const emailKey = profile.email.toLowerCase().trim();
-          localStorage.setItem(`fintrust_face_baseline_${emailKey}`, JSON.stringify(profile.faceDescriptor));
-          localStorage.setItem(`fintrust_face_baseline_global`, JSON.stringify(profile.faceDescriptor));
-        }
         if (profile.role === 'admin') {
           setActiveTab('admin');
         }
@@ -186,36 +181,7 @@ export default function App() {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBiometricModal, setShowBiometricModal] = useState(false);
   const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
-  const [multiFacePauseEnabled, setMultiFacePauseEnabled] = useState(false);
   const [cardFrozen, setCardFrozen] = useState(false);
-
-  useEffect(() => {
-    if (userProfile?.email) {
-      const emailKey = userProfile.email.toLowerCase().trim();
-      const val = localStorage.getItem(`fintrust_multi_face_pause_${emailKey}`);
-      if (val !== null) {
-        setMultiFacePauseEnabled(val === 'true');
-      } else {
-        const globalVal = localStorage.getItem('fintrust_multi_face_pause_global');
-        setMultiFacePauseEnabled(globalVal === 'true');
-      }
-    }
-  }, [userProfile]);
-
-  // Auto-prompt face biometrics setup if user lacks registered face
-  useEffect(() => {
-    if (pageState === 'dashboard' && userProfile && userProfile.email && userProfile.email !== 'no-email@fintrust.global') {
-      const emailKey = userProfile.email.toLowerCase().trim();
-      const stored = localStorage.getItem(`fintrust_face_baseline_${emailKey}`) || localStorage.getItem('fintrust_face_baseline_global');
-      if (!stored && !userProfile.faceDescriptor) {
-        console.log('[Face Shield] No face signature found. Prompting enrollment...');
-        const timer = setTimeout(() => {
-          setShowFaceEnrollModal(true);
-        }, 1500);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [pageState, userProfile]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
@@ -287,7 +253,7 @@ export default function App() {
         body: JSON.stringify({ targetUid, newRole })
       });
       if (res.ok) {
-        triggerToast(`Role updated to: ${newRole.toUpperCase()}`);
+        triggerToast(`Sovereign role updated to: ${newRole.toUpperCase()}`);
         fetchAdminData();
       } else {
         const err = await res.json();
@@ -332,7 +298,7 @@ export default function App() {
 
   const handleRunAllSecurityModules = async () => {
     playClickSound();
-    triggerToast('Initiating full secure hardware security suite run...');
+    triggerToast('Initiating full sovereign hardware security suite run...');
     const modules = getSecurityModules();
     for (const mod of modules) {
       if (mod.status === 'active') {
@@ -448,7 +414,7 @@ export default function App() {
           const savedTx = await response.json();
           setTransactions((prev) => [savedTx, ...prev]);
         } else {
-          throw new Error('Secure ledger failed to write block.');
+          throw new Error('Sovereign ledger failed to write block.');
         }
       } else {
         // Fallback for simulation
@@ -523,7 +489,7 @@ export default function App() {
           const profile = await response.json();
           setUserProfile(profile);
         } else {
-          let errMsg = 'Vault registry update rejected.';
+          let errMsg = 'Sovereign vault registry update rejected.';
           try {
             const errData = await response.json();
             if (errData && errData.error) {
@@ -540,14 +506,6 @@ export default function App() {
           ...updatedProfile,
         }));
       }
-
-      // Persist multi-face pause configuration locally
-      if (userProfile?.email) {
-        const emailKey = userProfile.email.toLowerCase().trim();
-        localStorage.setItem(`fintrust_multi_face_pause_${emailKey}`, multiFacePauseEnabled ? 'true' : 'false');
-        localStorage.setItem('fintrust_multi_face_pause_global', multiFacePauseEnabled ? 'true' : 'false');
-      }
-
       triggerToast('Secured profile modifications saved to vault registry.');
     } catch (err: any) {
       console.error('Profile update error:', err);
@@ -594,14 +552,7 @@ export default function App() {
             setAuthToken(token);
             fetchUserData(token);
           }
-          if (profile) {
-            setUserProfile(profile);
-            if (profile.faceDescriptor && profile.email) {
-              const emailKey = profile.email.toLowerCase().trim();
-              localStorage.setItem(`fintrust_face_baseline_${emailKey}`, JSON.stringify(profile.faceDescriptor));
-              localStorage.setItem(`fintrust_face_baseline_global`, JSON.stringify(profile.faceDescriptor));
-            }
-          }
+          if (profile) setUserProfile(profile);
           handlePageChange('dashboard');
         }}
         onBackToHome={() => handlePageChange('landing')}
@@ -621,14 +572,7 @@ export default function App() {
             setAuthToken(token);
             fetchUserData(token);
           }
-          if (profile) {
-            setUserProfile(profile as any);
-            if (profile.faceDescriptor && profile.email) {
-              const emailKey = profile.email.toLowerCase().trim();
-              localStorage.setItem(`fintrust_face_baseline_${emailKey}`, JSON.stringify(profile.faceDescriptor));
-              localStorage.setItem(`fintrust_face_baseline_global`, JSON.stringify(profile.faceDescriptor));
-            }
-          }
+          if (profile) setUserProfile(profile as any);
           triggerToast('Institutional identity registered and keys deployed successfully.');
           handlePageChange('dashboard');
         }}
@@ -642,6 +586,7 @@ export default function App() {
     <FaceVerificationProvider
       userProfile={userProfile}
       onLogout={handleLogout}
+      onTriggerEnroll={() => setShowFaceEnrollModal(true)}
     >
       <div className="min-h-screen bg-slate-50 flex font-sans selection:bg-brand-primary selection:text-white relative" id="portal-root">
       
@@ -686,7 +631,7 @@ export default function App() {
                 id="sidebar-tab-admin"
               >
                 <Shield className="h-4.5 w-4.5 text-brand-primary" />
-                Admin Portal
+                Sovereign Admin Portal
               </button>
             </>
           ) : (
@@ -826,7 +771,7 @@ export default function App() {
                 Institutional Terminal
               </span>
               <h2 className="text-lg font-extrabold text-slate-900 tracking-tight capitalize" id="portal-tab-header">
-                {activeTab === 'dashboard' ? 'Core Portfolio' : activeTab === 'ledger' ? 'Immutable Activity Ledger' : activeTab === 'payments' ? 'Treasury Reserves' : activeTab === 'insights' ? 'Strategic Intelligence' : activeTab === 'settings' ? 'Security Registry' : 'Admin Portal'}
+                {activeTab === 'dashboard' ? 'Core Portfolio' : activeTab === 'ledger' ? 'Immutable Activity Ledger' : activeTab === 'payments' ? 'Treasury Reserves' : activeTab === 'insights' ? 'Strategic Intelligence' : activeTab === 'settings' ? 'Security Registry' : 'Sovereign Admin Portal'}
               </h2>
             </div>
           </div>
@@ -897,7 +842,7 @@ export default function App() {
                         className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'admin' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
                       >
                         <Shield className="h-4.5 w-4.5 text-brand-primary" />
-                        Admin Portal
+                        Sovereign Admin Portal
                       </button>
                     ) : (
                       <>
@@ -977,6 +922,45 @@ export default function App() {
               {/* Dynamic balances & stats - Bento cards (Left 8 cols on desktop) */}
               <div className="lg:col-span-8 space-y-6" id="dashboard-left">
                 
+                {/* BIOMETRIC ENROLLMENT PROMPT FOR UNREGISTERED USERS */}
+                {(!userProfile?.faceDescriptor && !localStorage.getItem(`fintrust_face_baseline_${userProfile?.email?.toLowerCase().trim()}`) && !localStorage.getItem('fintrust_face_baseline_global')) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-indigo-950 border border-indigo-800 text-indigo-100 rounded-2xl p-5 relative overflow-hidden shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    id="biometric-enrollment-dashboard-prompt"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-8 -mt-8 blur-2xl pointer-events-none"></div>
+                    
+                    <div className="flex gap-4 items-start">
+                      <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+                        <Camera className="h-6 w-6 animate-pulse" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <h4 className="text-xs font-extrabold font-mono tracking-tight uppercase text-indigo-300">
+                          FACIAL BIOMETRICS REQUIRED
+                        </h4>
+                        <p className="text-[11px] text-indigo-200 leading-relaxed max-w-xl font-semibold">
+                          Your account does not have a baseline facial biometric template registered. Secure your institutional workstation immediately to authorize core transactions and shield your session.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        setShowFaceEnrollModal(true);
+                      }}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/25 shrink-0 flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      id="dashboard-btn-enroll-biometrics"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Enroll Biometrics Now
+                    </button>
+                  </motion.div>
+                )}
+
                 {/* Total Net Assets Summary */}
                 <div className="bg-white border border-slate-150 rounded-2xl p-6 relative overflow-hidden" id="dashboard-total-assets">
                   <div className="absolute top-0 right-0 w-48 h-48 bg-brand-primary/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
@@ -1161,7 +1145,7 @@ export default function App() {
                         ${balances.reserve.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                       </div>
                       <p className="text-[10px] text-slate-400 leading-normal font-medium">
-                        Capital allocations and high-grade trust distributions.
+                        Capital allocations and high-grade sovereign trust distributions.
                       </p>
                     </div>
                   </div>
@@ -1538,7 +1522,7 @@ export default function App() {
                   <div className="border-b border-slate-100 pb-4" id="payments-executor-header">
                     <h3 className="font-extrabold text-slate-950 text-base">Disburse Institutional Reserves</h3>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Direct real-time settlement across authorized secure vaults, corporations, and real-estate trustees.
+                      Direct real-time settlement across authorized sovereign vaults, corporations, and real-estate trustees.
                     </p>
                   </div>
 
@@ -1888,76 +1872,12 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Face Verification Enrollment Row */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl gap-4 mt-2" id="face-enrollment-row">
-                      <div className="flex gap-3">
-                        <div className="p-2 bg-indigo-500/10 text-indigo-600 rounded-lg h-fit shrink-0 border border-indigo-500/15">
-                          <Camera className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                            Continuous Face Shield Signature
-                            {localStorage.getItem(`fintrust_face_baseline_${userProfile?.email?.toLowerCase().trim()}`) || localStorage.getItem('fintrust_face_baseline_global') ? (
-                              <span className="bg-emerald-100 text-emerald-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full font-mono">
-                                ● ENROLLED
-                              </span>
-                            ) : (
-                              <span className="bg-amber-100 text-amber-800 text-[9px] font-extrabold px-2 py-0.5 rounded-full font-mono">
-                                ● NOT ENROLLED
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            Register or retake your workstation's facial biometric template baseline to secure active sessions with continuous 10-second sweeps.
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          playClickSound();
-                          setShowFaceEnrollModal(true);
-                        }}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[11px] font-bold transition flex items-center justify-center gap-1.5 self-end sm:sm:self-center shrink-0 border border-indigo-700 active:scale-95 cursor-pointer shadow-sm"
-                        id="btn-enroll-face-settings"
-                      >
-                        <Camera className="h-3.5 w-3.5 text-indigo-200" />
-                        Register / Retake Face
-                      </button>
-                    </div>
-
-                    {/* Shoulder-Surfing Auto-Pause Toggle Row */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl gap-4 mt-2" id="settings-multi-face-pause-row">
-                      <div className="flex gap-3">
-                        <div className="p-2 bg-rose-500/10 text-rose-600 rounded-lg h-fit shrink-0 border border-rose-500/15">
-                          <EyeOff className="h-5 w-5" />
-                        </div>
-                        <div>
-                          <div className="text-xs font-bold text-slate-800">Shoulder-Surfing Privacy Shield</div>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
-                            Automatically pause active workspace for 3 seconds if secondary viewers or multiple faces are detected looking at the screen.
-                          </div>
-                        </div>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                        <input
-                          type="checkbox"
-                          name="multiFacePauseEnabled"
-                          checked={multiFacePauseEnabled}
-                          onChange={(e) => {
-                            playClickSound();
-                            setMultiFacePauseEnabled(e.target.checked);
-                            if (userProfile?.email) {
-                              const emailKey = userProfile.email.toLowerCase().trim();
-                              localStorage.setItem(`fintrust_multi_face_pause_${emailKey}`, e.target.checked ? 'true' : 'false');
-                              localStorage.setItem('fintrust_multi_face_pause_global', e.target.checked ? 'true' : 'false');
-                            }
-                          }}
-                          className="sr-only peer"
-                        />
-                        <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-500"></div>
-                      </label>
-                    </div>
+                    {/* Face Verification Enrollment Row with Interval & Constant verification options */}
+                    <FaceVerificationSettingsRow
+                      userProfile={userProfile}
+                      playClickSound={playClickSound}
+                      setShowFaceEnrollModal={setShowFaceEnrollModal}
+                    />
                   </div>
                 </div>
 
@@ -2033,7 +1953,7 @@ export default function App() {
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <div className="flex items-center gap-2">
                       <Cpu className="h-4.5 w-4.5 text-brand-primary" />
-                      <span className="text-xs font-bold text-slate-800">System Health</span>
+                      <span className="text-xs font-bold text-slate-800">Sovereign Node Health</span>
                     </div>
                     <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100 animate-pulse">
                       ONLINE
@@ -2171,7 +2091,7 @@ export default function App() {
                     <div className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-user-registry">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                         <div>
-                          <h3 className="font-extrabold text-slate-900 text-sm">Identity Registry</h3>
+                          <h3 className="font-extrabold text-slate-900 text-sm">Sovereign Identity Registry</h3>
                           <p className="text-[10px] text-slate-400">Manage directory records and permission ring mappings.</p>
                         </div>
                         <div className="relative">
@@ -2251,7 +2171,7 @@ export default function App() {
                     <div className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-shield-controller">
                       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                         <div>
-                          <h3 className="font-extrabold text-slate-900 text-sm">System Protection Sweeps</h3>
+                          <h3 className="font-extrabold text-slate-900 text-sm">Sovereign Protection Sweeps</h3>
                           <p className="text-[10px] text-slate-400">Validate active defense signatures and execute sweeps on demand.</p>
                         </div>
                         <button
@@ -2509,9 +2429,9 @@ export default function App() {
                     Committee Recommendations
                   </h5>
                   <ul className="text-xs text-slate-500 space-y-2 list-disc pl-4 leading-relaxed font-semibold">
-                    <li>Maintain Q4 allocation structures inside local currency brackets.</li>
+                    <li>Maintain Q4 allocation structures inside local sovereign currency brackets.</li>
                     <li>Utilize fractional secure key nodes for cross-border settlements over $50k.</li>
-                    <li>Align long-term secure assets with standard Basel compliance criteria.</li>
+                    <li>Align long-term sovereign assets with standard Basel compliance criteria.</li>
                   </ul>
                 </div>
               </div>
@@ -2566,31 +2486,39 @@ export default function App() {
             userEmail={userProfile.email}
             onSuccess={async (descriptor) => {
               try {
-                const token = authToken || localStorage.getItem('fintrust_custom_token');
-                if (token) {
-                  const numericArray = Array.from(descriptor);
-                  const response = await fetch('/api/user/profile', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${token}`
-                    },
-                    body: JSON.stringify({
-                      ...userProfile,
-                      faceDescriptor: numericArray
-                    })
+                const descriptorStr = JSON.stringify(Array.from(descriptor));
+                
+                // Persist the face descriptor to our secure PostgreSQL backend
+                const response = await fetch('/api/user/biometrics', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                  },
+                  body: JSON.stringify({ faceDescriptor: descriptorStr })
+                });
+
+                if (response.ok) {
+                  const updatedProfile = await response.json();
+                  setUserProfile(updatedProfile);
+                  triggerToast('Continuous Face Shield Signature registered securely.');
+                } else {
+                  console.warn('Backend face descriptor persistence sync failed, using local cache fallback.');
+                  // Fallback locally
+                  setUserProfile({
+                    ...userProfile,
+                    faceDescriptor: descriptorStr
                   });
-                  if (!response.ok) {
-                    console.error('Failed to sync biometric profile with server.');
-                  }
+                  triggerToast('Continuous Face Shield registered locally.');
                 }
-              } catch (e) {
-                console.error('Failed to sync biometric profile:', e);
+              } catch (err) {
+                console.error('Error saving face descriptor to database:', err);
+                setUserProfile({
+                  ...userProfile,
+                  faceDescriptor: JSON.stringify(Array.from(descriptor))
+                });
+                triggerToast('Continuous Face Shield registered locally.');
               }
-              // Force local reference update so FaceVerificationProvider rechecks baseline
-              const numericArray = Array.from(descriptor);
-              setUserProfile({ ...userProfile, faceDescriptor: numericArray });
-              triggerToast('Continuous Face Shield Signature registered successfully.');
               setShowFaceEnrollModal(false);
             }}
           />

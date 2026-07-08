@@ -11,7 +11,10 @@ export interface UserProfile {
   emailAlerts: boolean;
   pushNotifications: boolean;
   smsMarketing: boolean;
-  faceDescriptor?: number[];
+  faceDescriptor?: string | null;
+  balanceOperational?: number;
+  balanceVault?: number;
+  balanceReserve?: number;
 }
 
 export interface SessionDevice {
