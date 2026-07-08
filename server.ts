@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from "express";
 import path from "path";
 import fs from "fs";
+import { createServer as createViteServer } from "vite";
 import { supabase } from "./src/lib/supabase.ts";
 import { requireAuth, AuthRequest, hashPassword, verifyPassword, generateCustomToken } from "./src/middleware/auth.ts";
 import {
@@ -13,6 +14,8 @@ import {
   getBlockedIps,
   getSanitizationCount
 } from "./src/security/index.ts";
+
+export const app = express();
 
 // Normalize Supabase snake_case responses to camelCase for the frontend
 const normalizeUser = (u: any) => ({
@@ -236,10 +239,10 @@ const defaultScheduledObligations = [
   }
 ];
 
-const app = express();
-app.use(express.json());
+async function startServer() {
+  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-export default app;
+  app.use(express.json());
 
   // In-memory test user store for security suite verification
   interface SecurityTestUser {
@@ -402,7 +405,7 @@ export default app;
     try {
       const logsPath = path.join(process.cwd(), 'logs', 'security.log');
       let parsedLogs: any[] = [];
-      
+
       if (fs.existsSync(logsPath)) {
         const fileContent = fs.readFileSync(logsPath, 'utf8');
         const lines = fileContent.trim().split('\n');
@@ -435,7 +438,7 @@ export default app;
           }
         ];
       }
-      
+
       // Return newest first
       res.json(parsedLogs.reverse());
     } catch (error: any) {
@@ -451,7 +454,7 @@ export default app;
       const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100;
       const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100;
       const rssMB = Math.round(mem.rss / 1024 / 1024 * 100) / 100;
-      
+
       // 2. Database connectivity check
       let dbStatus = "Connected";
       let dbLatencyMs = 12; // default
@@ -514,7 +517,7 @@ export default app;
     try {
       const configPath = path.join(process.cwd(), "firebase-applet-config.json");
       const firebaseConfig = fs.readFileSync(configPath, "utf8");
-      
+
       const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -753,7 +756,7 @@ export default app;
 
       // If user has a password_hash, verify it. 
       // If user is a seeded default user and doesn't have a password_hash, allow 'password'.
-      const isPasswordValid = user.password_hash 
+      const isPasswordValid = user.password_hash
         ? verifyPassword(password, user.password_hash)
         : (password === 'password' || password === user.password_hash);
 
@@ -807,7 +810,7 @@ export default app;
         const reqDescriptor = safeParseDescriptor(faceDescriptor);
 
         if (!dbDescriptor || !reqDescriptor || dbDescriptor.length !== 128 || reqDescriptor.length !== 128) {
-          console.warn("[Biometric Login] Template dimension mismatch or malformed signatures:", 
+          console.warn("[Biometric Login] Template dimension mismatch or malformed signatures:",
             "db length:", dbDescriptor ? dbDescriptor.length : "null",
             "req length:", reqDescriptor ? reqDescriptor.length : "null"
           );
@@ -1203,9 +1206,8 @@ export default app;
   });
 
   // Vite development / production fallback middleware
-  async function init() {
+  if (process.env.VERCEL !== "1") {
     if (process.env.NODE_ENV !== "production") {
-      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
@@ -1218,16 +1220,16 @@ export default app;
         res.sendFile(path.join(distPath, 'index.html'));
       });
     }
-
-    // Global Error Shielding Middleware to prevent Information Disclosure
-    app.use(errorHandling);
-
-    if (!process.env.VERCEL) {
-      const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-      app.listen(PORT, "0.0.0.0", () => {
-        console.log(`[SecureFin Server] Running on port ${PORT}`);
-      });
-    }
   }
 
-  init();
+  // Global Error Shielding Middleware to prevent Information Disclosure
+  app.use(errorHandling);
+
+  if (process.env.VERCEL !== "1") {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`[SecureFin Server] Running on port ${PORT}`);
+    });
+  }
+}
+
+startServer();
