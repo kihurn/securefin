@@ -10,13 +10,13 @@ export function getBlockedIps() {
 
 /**
  * Brute-force protection rate limiter.
- * 5.) Limiting Login Attempts (prevents automated attacks by limiting how fast someone can try to log in)
+ * Limiting Login Attempts (prevents automated attacks by limiting how fast someone can try to log in)
  */
 export function rateLimiter(req: Request, res: Response, next: NextFunction) {
   const ip = req.ip || 'unknown';
   const now = Date.now();
   const windowMs = 60 * 1000; // 1 minute
-  const maxRequests = 20;
+  const maxRequests = 5; // <-- UPDATED FROM 20 TO 5 TRIES MAX
 
   const attempt = loginAttempts.get(ip);
   if (!attempt) {
@@ -24,6 +24,7 @@ export function rateLimiter(req: Request, res: Response, next: NextFunction) {
     return next();
   }
 
+  // If the 1-minute window has expired, reset the attempts count and lift any blocks
   if (now - attempt.firstAttempt > windowMs) {
     loginAttempts.set(ip, { count: 1, firstAttempt: now });
     blockedIps.delete(ip);
