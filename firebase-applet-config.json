@@ -1,9 +1,10 @@
 {
-  "projectId": "juicy-computer-hnzsc",
-  "appId": "1:1050415516794:web:6236d83b8c2b9729c07fc3",
-  "apiKey": "AIzaSyDZuXEdWFHfdk8xws9cZON2LmTBQ1-ID5M",
-  "authDomain": "juicy-computer-hnzsc.firebaseapp.com",
-  "storageBucket": "juicy-computer-hnzsc.firebasestorage.app",
-  "messagingSenderId": "1050415516794",
-  "measurementId": ""
+  "projectId": "fin-auth-9ef87",
+  "appId": "1:592415644873:web:83b6273d9a1aaba3734118",
+  "apiKey": "AIzaSyBf2ib1kW2qVACLAUiTLKJt0izhLND5Dg8",
+  "authDomain": "fin-auth-9ef87.firebaseapp.com",
+  "firestoreDatabaseId": "",
+  "storageBucket": "fin-auth-9ef87.firebasestorage.app",
+  "messagingSenderId": "592415644873",
+  "measurementId": "G-4QLCWTR25Z"
 }

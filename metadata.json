@@ -1,6 +1,7 @@
 {
   "name": "SecureFin",
   "description": "Banking Built for the Future - Secure Wealth & Asset Management Portal",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "requestFramePermissions": [
+    "camera"
+  ],
 }

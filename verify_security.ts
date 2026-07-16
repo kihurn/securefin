@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
-const PORT = 3000;
+const PORT = 3900;
 const BASE_URL = `http://localhost:${PORT}`;
 
 console.log('====================================================');
@@ -14,10 +14,11 @@ async function runTests() {
 
   try {
     // 1. Start the server
-    console.log('Starting Express server locally...');
+    console.log(`Starting Express server locally on port ${PORT}...`);
     serverProcess = spawn('npx', ['tsx', 'server.ts'], {
       shell: true,
       stdio: 'pipe',
+      env: { ...process.env, PORT: String(PORT) }
     });
 
     // Wait for the server to start up by listening to stdout

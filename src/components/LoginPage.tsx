@@ -1,88 +1,129 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SecureFinLogo } from './SecureFinLogo';
-import { ShieldAlert, KeyRound, Loader2, ArrowRight, Smartphone, RefreshCw, ChevronLeft } from 'lucide-react';
+import { ShieldAlert, KeyRound, Loader2, ArrowRight, Smartphone, RefreshCw, ChevronLeft, Fingerprint } from 'lucide-react';
 import { playClickSound, playSuccessSound, playErrorSound } from '../utils/audio';
 import { auth } from '../lib/firebase.ts';
-import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithCredential, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { BiometricVerificationModal } from './BiometricVerificationModal';
 
 interface LoginPageProps {
-  onLoginSuccess: (userProfile?: any) => void;
+  onLoginSuccess: (userProfile?: any, token?: string) => void;
   onBackToHome: () => void;
   onGoToRegister?: () => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHome, onGoToRegister }) => {
-  const [email, setEmail] = useState('a.sterling@fintrust.global');
-  const [password, setPassword] = useState('••••••••');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [step, setStep] = useState<'credentials' | '2fa'>('credentials');
   const [twoFactorCode, setTwoFactorCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [timer, setTimer] = useState(115); // 1m 55s
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleGoogleSignIn = () => {
+  // Biometric state variables
+  const [biometricEmails, setBiometricEmails] = useState<string[]>([]);
+  const [showBiometricSelect, setShowBiometricSelect] = useState(false);
+  const [selectedBiometricEmail, setSelectedBiometricEmail] = useState('');
+  const [showLoginBiometricModal, setShowLoginBiometricModal] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('fintrust_biometric_emails');
+      if (saved) {
+        setBiometricEmails(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.error('Failed to load biometric emails:', e);
+    }
+  }, []);
+
+  const handleBiometricLoginClick = () => {
+    playClickSound();
+    if (email && email.trim()) {
+      setSelectedBiometricEmail(email.trim().toLowerCase());
+      setShowLoginBiometricModal(true);
+    } else if (biometricEmails.length === 1) {
+      setSelectedBiometricEmail(biometricEmails[0]);
+      setShowLoginBiometricModal(true);
+    } else if (biometricEmails.length > 1) {
+      setShowBiometricSelect(true);
+    } else {
+      setSelectedBiometricEmail('alexander.sterling@securefin.io');
+      setShowLoginBiometricModal(true);
+    }
+  };
+
+  const handleBiometricSuccess = async (descriptor?: Float32Array) => {
+    setIsLoading(true);
+    setErrorMessage('');
+    setShowLoginBiometricModal(false);
+    try {
+      const faceDescriptorStr = descriptor ? JSON.stringify(Array.from(descriptor)) : null;
+
+      const response = await fetch('/api/auth/login-biometric', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email: selectedBiometricEmail,
+          faceDescriptor: faceDescriptorStr
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Biometric identity node handshake failed on registry.');
+      }
+
+      const { profile, token } = await response.json();
+      setIsLoading(false);
+      playSuccessSound();
+      onLoginSuccess(profile, token);
+    } catch (error: any) {
+      console.error('Biometric verification failed:', error);
+      setIsLoading(false);
+      setErrorMessage(error.message || 'Sovereign biometric authentication rejected.');
+      playErrorSound();
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
     playClickSound();
     setIsLoading(true);
     setErrorMessage('');
 
-    const width = 550;
-    const height = 650;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
-    const popup = window.open(
-      '/auth-popup',
-      'auth_popup',
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const idToken = await user.getIdToken();
 
-    if (!popup) {
-      setErrorMessage('Please allow popups to sign in with Google.');
-      setIsLoading(false);
-      playErrorSound();
-      return;
-    }
-
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data?.type === 'FIREBASE_AUTH_SUCCESS') {
-        window.removeEventListener('message', handleMessage);
-        const { googleIdToken, googleAccessToken } = event.data;
-
-        try {
-          const credential = GoogleAuthProvider.credential(googleIdToken, googleAccessToken);
-          const result = await signInWithCredential(auth, credential);
-          const user = result.user;
-          const idToken = await user.getIdToken();
-
-          // Call our secure backend to sync the user profile in Postgres
-          const response = await fetch('/api/auth/sync', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            }
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to synchronize sovereign identity node with the ledger.');
-          }
-
-          const userProfile = await response.json();
-          playSuccessSound();
-          onLoginSuccess(userProfile);
-        } catch (error: any) {
-          console.error('Google Auth Error:', error);
-          setErrorMessage(error.message || 'Identity verification aborted or failed.');
-          playErrorSound();
-        } finally {
-          setIsLoading(false);
+      // Call our secure backend to sync the user profile in Postgres
+      const response = await fetch('/api/auth/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
         }
-      }
-    };
+      });
 
-    window.addEventListener('message', handleMessage);
+      if (!response.ok) {
+        throw new Error('Failed to synchronize sovereign identity node with the ledger.');
+      }
+
+      const userProfile = await response.json();
+      playSuccessSound();
+      onLoginSuccess(userProfile);
+    } catch (error: any) {
+      console.error('Google Auth Error:', error);
+      setErrorMessage(error.message || 'Identity verification aborted or failed.');
+      playErrorSound();
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 2FA Code expiration timer
@@ -106,7 +147,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
     return `${m}:${s}`;
   };
 
-  const handleCredentialsSubmit = (e: React.FormEvent) => {
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     playClickSound();
 
@@ -119,14 +160,31 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
     setIsLoading(true);
     setErrorMessage('');
 
-    // Simulate quick authentication
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/auth/login-custom', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Invalid credentials or sovereign node validation failed.');
+      }
+
       setIsLoading(false);
       setStep('2fa');
-    }, 1000);
+    } catch (error: any) {
+      console.error('Credentials verification error:', error);
+      setIsLoading(false);
+      setErrorMessage(error.message || 'Identity node verification failed.');
+      playErrorSound();
+    }
   };
 
-  const handle2FASubmit = (e: React.FormEvent) => {
+  const handle2FASubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     playClickSound();
 
@@ -139,11 +197,30 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
     setIsLoading(true);
     setErrorMessage('');
 
-    setTimeout(() => {
+    try {
+      const response = await fetch('/api/auth/login-custom', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'Identity verification aborted or failed. Please check your master credentials.');
+      }
+
+      const { profile, token } = await response.json();
       setIsLoading(false);
       playSuccessSound();
-      onLoginSuccess();
-    }, 1200);
+      onLoginSuccess(profile, token);
+    } catch (error: any) {
+      console.error('Email login/sync error:', error);
+      setIsLoading(false);
+      setErrorMessage(error.message || 'Identity verification aborted or failed.');
+      playErrorSound();
+    }
   };
 
   const handleResendCode = () => {
@@ -188,8 +265,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
               {step === 'credentials' ? 'Secure Vault Gateway' : 'Two-Factor Authentication'}
             </h2>
             <p className="text-xs text-slate-400 leading-normal">
-              {step === 'credentials' 
-                ? 'Authorized access only. High-fidelity cryptographic monitoring enabled.' 
+              {step === 'credentials'
+                ? 'Authorized access only. High-fidelity cryptographic monitoring enabled.'
                 : 'Enter the security token sent to your validated mobile hardware.'
               }
             </p>
@@ -198,115 +275,175 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
           {/* Animate credentials vs 2FA */}
           <AnimatePresence mode="wait">
             {step === 'credentials' ? (
-              <motion.form
-                key="credentials-form"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                onSubmit={handleCredentialsSubmit}
-                className="space-y-5"
-                id="credentials-form"
-              >
-                {/* Form Inputs */}
-                <div className="space-y-1.5" id="login-email-group">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-                    Institutional Email Address
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent transition placeholder-slate-600 font-mono"
-                    placeholder="name@organization.com"
-                    id="login-email-input"
-                  />
-                </div>
-
-                <div className="space-y-1.5" id="login-password-group">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
-                      Master Password
+              showBiometricSelect ? (
+                <motion.div
+                  key="biometric-select-view"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="space-y-5"
+                  id="biometric-select-container"
+                >
+                  <div className="space-y-2 text-left" id="biometric-select-group">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono block mb-1">
+                      Select Biometric Node Identity
                     </label>
-                    <span className="text-[10px] text-brand-primary-container hover:underline cursor-pointer font-semibold">
-                      Forgot?
-                    </span>
+                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                      {biometricEmails.map((biomEmail) => (
+                        <button
+                          key={biomEmail}
+                          type="button"
+                          onClick={() => {
+                            playClickSound();
+                            setSelectedBiometricEmail(biomEmail);
+                            setShowBiometricSelect(false);
+                            setShowLoginBiometricModal(true);
+                          }}
+                          className="w-full text-left p-3.5 bg-slate-900 border border-slate-800 rounded-xl hover:bg-slate-850 hover:border-slate-700 transition flex items-center justify-between group cursor-pointer"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-white group-hover:text-cyan-400 transition">{biomEmail}</span>
+                            <span className="text-[9px] text-slate-500 font-mono mt-0.5">AUTHORIZED HARDWARE CRYPTO KEY</span>
+                          </div>
+                          <Fingerprint className="h-4.5 w-4.5 text-slate-500 group-hover:text-cyan-400 transition" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent transition placeholder-slate-600 font-mono"
-                    placeholder="Master password"
-                    id="login-password-input"
-                  />
-                </div>
 
-                {errorMessage && (
-                  <div className="p-3 bg-red-950/40 border border-red-900/50 rounded-xl text-xs text-red-400 flex items-center gap-2" id="login-error-msg">
-                    <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
-                    <span>{errorMessage}</span>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full py-3.5 rounded-xl bg-brand-primary hover:bg-brand-primary-container text-white text-sm font-bold shadow-lg shadow-brand-primary/10 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50"
-                  id="login-btn-continue"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setShowBiometricSelect(false);
+                    }}
+                    className="w-full py-3 bg-slate-900 border border-slate-800 text-slate-300 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 hover:bg-slate-850"
+                  >
+                    Back to Credentials
+                  </button>
+                </motion.div>
+              ) : (
+                <motion.form
+                  key="credentials-form"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  onSubmit={handleCredentialsSubmit}
+                  className="space-y-5"
+                  id="credentials-form"
                 >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin text-white" />
-                      Authenticating Credentials...
-                    </>
-                  ) : (
-                    <>
-                      Decrypt & Continue
-                      <ArrowRight className="h-4 w-4" />
-                    </>
+                  {/* Form Inputs */}
+                  <div className="space-y-1.5" id="login-email-group">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                      Institutional Email Address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent transition placeholder-slate-600 font-mono"
+                      placeholder="name@organization.com"
+                      id="login-email-input"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5" id="login-password-group">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">
+                        Master Password
+                      </label>
+                      <span className="text-[10px] text-brand-primary-container hover:underline cursor-pointer font-semibold">
+                        Forgot?
+                      </span>
+                    </div>
+                    <input
+                      type="password"
+                      required
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary focus:border-transparent transition placeholder-slate-600 font-mono"
+                      placeholder="Master password"
+                      id="login-password-input"
+                    />
+                  </div>
+
+                  {errorMessage && (
+                    <div className="p-3 bg-red-950/40 border border-red-900/50 rounded-xl text-xs text-red-400 flex items-center gap-2" id="login-error-msg">
+                      <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
+                      <span>{errorMessage}</span>
+                    </div>
                   )}
-                </button>
 
-                <div className="relative flex py-2 items-center" id="login-or-divider">
-                  <div className="flex-grow border-t border-slate-800"></div>
-                  <span className="flex-shrink mx-4 text-[10px] text-slate-500 font-mono font-bold uppercase tracking-wider">OR</span>
-                  <div className="flex-grow border-t border-slate-800"></div>
-                </div>
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full py-3.5 rounded-xl bg-brand-primary hover:bg-brand-primary-container text-white text-sm font-bold shadow-lg shadow-brand-primary/10 transition flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 cursor-pointer"
+                    id="login-btn-continue"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-white" />
+                        Authenticating Credentials...
+                      </>
+                    ) : (
+                      <>
+                        Decrypt & Continue
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </button>
 
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  onClick={handleGoogleSignIn}
-                  className="w-full py-3 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:border-slate-700 text-white text-xs font-bold font-mono transition flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
-                  id="login-btn-google"
-                >
-                  <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                  </svg>
-                  Authorize Google Identity
-                </button>
-
-                {onGoToRegister && (
-                  <div className="text-center pt-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        playClickSound();
-                        onGoToRegister();
-                      }}
-                      className="text-xs text-brand-secondary hover:text-brand-primary transition font-semibold"
-                      id="login-btn-go-to-register"
-                    >
-                      New to SecureFin? Create an Account
-                    </button>
+                  <div className="relative flex py-2 items-center" id="login-or-divider">
+                    <div className="flex-grow border-t border-slate-800"></div>
+                    <span className="flex-shrink mx-4 text-[10px] text-slate-500 font-mono font-bold uppercase tracking-wider">OR</span>
+                    <div className="flex-grow border-t border-slate-800"></div>
                   </div>
-                )}
-              </motion.form>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={handleBiometricLoginClick}
+                    className="w-full py-3.5 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:border-slate-700 text-white text-xs font-bold font-mono transition flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50 cursor-pointer shadow-lg mb-3"
+                    id="login-btn-biometric"
+                  >
+                    <Fingerprint className="h-4 w-4 text-cyan-400 animate-pulse shrink-0" />
+                    Verify Biometric ID Sensor
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={handleGoogleSignIn}
+                    className="w-full py-3 rounded-xl bg-slate-900 border border-slate-800 hover:bg-slate-850 hover:border-slate-700 text-white text-xs font-bold font-mono transition flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50 cursor-pointer"
+                    id="login-btn-google"
+                  >
+                    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                    </svg>
+                    Authorize Google Identity
+                  </button>
+
+                  {onGoToRegister && (
+                    <div className="text-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          playClickSound();
+                          onGoToRegister();
+                        }}
+                        className="text-xs text-brand-secondary hover:text-brand-primary transition font-semibold cursor-pointer"
+                        id="login-btn-go-to-register"
+                      >
+                        New to SecureFin? Create an Account
+                      </button>
+                    </div>
+                  )}
+                </motion.form>
+              )
             ) : (
               <motion.form
                 key="2fa-form"
@@ -324,7 +461,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
                       <Smartphone className="h-6 w-6 text-brand-primary" />
                     </div>
                   </div>
-                  
+
                   <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest block">
                     verification code dispatched to +41 ••• •• 94
                   </span>
@@ -346,7 +483,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
                       id="login-2fa-input"
                     />
                   </div>
-                  
+
                   <span className="text-xs text-slate-500 block">
                     Verify using code <span className="font-mono text-white font-bold">948201</span>
                   </span>
@@ -413,6 +550,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
           By logging in, you acknowledge that all queries, actions, and settlement transactions are recorded on the SecureFin immutable secure ledger.
         </p>
       </div>
+
+      <AnimatePresence>
+        {showLoginBiometricModal && (
+          <BiometricVerificationModal
+            onClose={() => setShowLoginBiometricModal(false)}
+            onSuccess={handleBiometricSuccess}
+            userEmail={selectedBiometricEmail}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

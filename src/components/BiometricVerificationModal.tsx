@@ -2,21 +2,159 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Fingerprint, ShieldAlert, CheckCircle2, Cpu, Smartphone, Loader2, Info, ArrowRight, ShieldCheck, HelpCircle } from 'lucide-react';
 import { playClickSound, playSuccessSound, playErrorSound, playTransitionSound } from '../utils/audio';
+import { generateFaceDescriptor, ensureModelsLoaded } from '../faceDetection';
 
 interface BiometricVerificationModalProps {
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (descriptor?: Float32Array) => void;
+  userEmail?: string;
+  userDisplayName?: string;
 }
 
-type AuthState = 'idle' | 'hardware-checking' | 'hardware-success' | 'hardware-failed' | 'simulating' | 'simulation-success';
+type AuthState = 'idle' | 'hardware-checking' | 'hardware-success' | 'hardware-failed' | 'simulation-success' | 'webcam-scanning';
 
-export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVerificationModalProps) {
+export function BiometricVerificationModal({ onClose, onSuccess, userEmail = "alexander.sterling@securefin.io", userDisplayName = "Alexander Sterling" }: BiometricVerificationModalProps) {
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [errorDetails, setErrorDetails] = useState<string>('');
   const [hardwareSupported, setHardwareSupported] = useState<boolean | null>(null);
-  const [simType, setSimType] = useState<'touch' | 'face'>('touch');
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStatus, setScanStatus] = useState('Initialize cryptographic scanner');
+
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
+  const [capturedDescriptor, setCapturedDescriptor] = useState<Float32Array | null>(null);
+  const authStateRef = React.useRef(authState);
+
+  useEffect(() => {
+    authStateRef.current = authState;
+  }, [authState]);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  const startRealFaceScan = async () => {
+    playClickSound();
+    setAuthState('webcam-scanning');
+    setIsLoadingModels(true);
+    setScanProgress(0);
+    setScanStatus('Loading model tensors...');
+
+    try {
+      await ensureModelsLoaded();
+      if (authStateRef.current !== 'webcam-scanning') return;
+      setIsLoadingModels(false);
+
+      // Start webcam
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user',
+        },
+        audio: false,
+      });
+
+      if (authStateRef.current !== 'webcam-scanning') {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+      setPermissionGranted(true);
+      setScanStatus('Scanning face...');
+
+      // Sweep animation progress
+      let progress = 10;
+      setScanProgress(progress);
+
+      let progressDir = 1;
+      const progressInterval = setInterval(() => {
+        setScanProgress((prev) => {
+          if (prev >= 90) progressDir = -1;
+          if (prev <= 10) progressDir = 1;
+          return prev + (progressDir * 5);
+        });
+      }, 150);
+
+      let descriptor: Float32Array | null = null;
+      const startScanTime = Date.now();
+
+      // Attempt scanning for up to 15 seconds
+      while (authStateRef.current === 'webcam-scanning') {
+        if (Date.now() - startScanTime > 15000) {
+          break; // Timeout
+        }
+
+        if (!videoRef.current) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+          continue;
+        }
+
+        try {
+          descriptor = await generateFaceDescriptor(videoRef.current);
+          if (descriptor) {
+            break;
+          }
+        } catch (e) {
+          console.warn('Scan attempt failed, retrying...', e);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+
+      clearInterval(progressInterval);
+
+      if (authStateRef.current !== 'webcam-scanning') {
+        stopCamera();
+        return;
+      }
+
+      if (descriptor) {
+        setScanProgress(100);
+        setScanStatus('Face signature captured!');
+        setCapturedDescriptor(descriptor);
+        setAuthState('simulation-success');
+        playSuccessSound();
+
+        setTimeout(() => {
+          stopCamera();
+          onSuccess(descriptor!);
+          onClose();
+        }, 1500);
+      } else {
+        stopCamera();
+        setAuthState('idle');
+        setErrorDetails('Face scan timed out or no face detected. Please ensure good lighting and look directly at the camera.');
+        playErrorSound();
+      }
+
+    } catch (err: any) {
+      console.error('Webcam Face Scan error:', err);
+      stopCamera();
+      setIsLoadingModels(false);
+      setAuthState('idle');
+      setErrorDetails(err.message || 'Camera access denied or webcam is unavailable.');
+      playErrorSound();
+    }
+  };
 
   useEffect(() => {
     // Check if WebAuthn platform biometrics are supported in this browser
@@ -51,9 +189,9 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
           id: window.location.hostname || "localhost",
         },
         user: {
-          id: Uint8Array.from("sterling-cio-001", c => c.charCodeAt(0)),
-          name: "alexander.sterling@securefin.io",
-          displayName: "Alexander Sterling",
+          id: Uint8Array.from(userEmail, c => c.charCodeAt(0)),
+          name: userEmail,
+          displayName: userDisplayName,
         },
         pubKeyCredParams: [{ alg: -7, type: "public-key" }], // ES256
         authenticatorSelection: {
@@ -77,7 +215,7 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
       }
     } catch (err: any) {
       console.warn("Hardware biometric error / security constraint:", err);
-      
+
       // Map standard WebAuthn errors to descriptive user explanations
       let message = "Verification failed or cancelled by user.";
       if (err.name === 'SecurityError') {
@@ -89,46 +227,14 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
       } else if (err.message) {
         message = err.message;
       }
-      
+
       setErrorDetails(message);
       setAuthState('hardware-failed');
       playErrorSound();
     }
   };
 
-  // Run simulation sequence
-  const startSimulation = (type: 'touch' | 'face') => {
-    playClickSound();
-    setSimType(type);
-    setAuthState('simulating');
-    setScanProgress(0);
-    setScanStatus('Aligning biometric sensor matrices...');
-
-    let currentProgress = 0;
-    const interval = setInterval(() => {
-      currentProgress += 4;
-      setScanProgress(currentProgress);
-
-      if (currentProgress < 25) {
-        setScanStatus('Calibrating hardware focus elements...');
-      } else if (currentProgress < 50) {
-        setScanStatus('Scanning unique ridge vectors & minutiae...');
-      } else if (currentProgress < 75) {
-        setScanStatus('Hashing encrypted signature payload...');
-      } else if (currentProgress < 95) {
-        setScanStatus('Validating SHA-512 handshake on FinTrust node...');
-      } else if (currentProgress >= 100) {
-        clearInterval(interval);
-        setScanStatus('Verification completed successfully!');
-        setAuthState('simulation-success');
-        playSuccessSound();
-        setTimeout(() => {
-          onSuccess();
-          onClose();
-        }, 2000);
-      }
-    }, 80);
-  };
+  // Simulation sequence removed in favor of real biometrics only
 
   return (
     <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm z-50 flex items-center justify-center p-4" id="biometric-modal-backdrop">
@@ -157,6 +263,7 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
           <button
             onClick={() => {
               playClickSound();
+              stopCamera();
               onClose();
             }}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition"
@@ -205,37 +312,21 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
                 <div className="space-y-3 pt-2">
                   <button
                     onClick={triggerHardwareAuth}
-                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/15"
+                    className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/15 active:scale-95 cursor-pointer"
                     id="btn-trigger-hardware-biometrics"
                   >
                     <Cpu className="h-4 w-4" />
                     Verify via Hardware Key
                   </button>
 
-                  <div className="relative flex py-1 items-center">
-                    <div className="flex-grow border-t border-slate-800"></div>
-                    <span className="flex-shrink mx-4 text-[9px] font-mono text-slate-500 uppercase tracking-widest font-bold">Or Simulate Authentication</span>
-                    <div className="flex-grow border-t border-slate-800"></div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => startSimulation('touch')}
-                      className="py-2.5 px-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                      id="btn-sim-touch"
-                    >
-                      <Fingerprint className="h-3.5 w-3.5 text-cyan-400" />
-                      Touch ID Scan
-                    </button>
-                    <button
-                      onClick={() => startSimulation('face')}
-                      className="py-2.5 px-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 hover:text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                      id="btn-sim-face"
-                    >
-                      <Smartphone className="h-3.5 w-3.5 text-indigo-400" />
-                      Face ID Scan
-                    </button>
-                  </div>
+                  <button
+                    onClick={startRealFaceScan}
+                    className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-200 hover:text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
+                    id="btn-sim-face"
+                  >
+                    <Smartphone className="h-4 w-4 text-indigo-400" />
+                    Verify via Face Scan (Webcam)
+                  </button>
                 </div>
               </motion.div>
             )}
@@ -312,31 +403,21 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
                   </p>
                 </div>
 
-                <div className="space-y-2 pt-2">
+                <div className="space-y-3 pt-2">
                   <div className="text-[10px] text-slate-500 font-medium">
-                    Try the high-fidelity interactive simulation instead:
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => startSimulation('touch')}
-                      className="py-2.5 px-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-blue-600/10"
-                      id="btn-retry-sim-touch"
-                    >
-                      <Fingerprint className="h-3.5 w-3.5" />
-                      Simulate Touch ID
-                    </button>
-                    <button
-                      onClick={() => startSimulation('face')}
-                      className="py-2.5 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/10"
-                      id="btn-retry-sim-face"
-                    >
-                      <Smartphone className="h-3.5 w-3.5" />
-                      Simulate Face ID
-                    </button>
+                    Please use the integrated camera face validation instead:
                   </div>
                   <button
+                    onClick={startRealFaceScan}
+                    className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10 active:scale-95 cursor-pointer"
+                    id="btn-retry-sim-face"
+                  >
+                    <Smartphone className="h-4 w-4 animate-pulse" />
+                    Verify via Face Scan (Webcam)
+                  </button>
+                  <button
                     onClick={() => setAuthState('idle')}
-                    className="text-xs text-slate-400 hover:text-white transition underline block mx-auto pt-2"
+                    className="text-xs text-slate-400 hover:text-white transition underline block mx-auto pt-2 cursor-pointer"
                   >
                     Back to Selection
                   </button>
@@ -344,32 +425,65 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
               </motion.div>
             )}
 
-            {authState === 'simulating' && (
+            {authState === 'webcam-scanning' && (
               <motion.div
-                key="simulating"
+                key="webcam-scanning"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="flex flex-col items-center justify-center py-6 space-y-6"
+                className="flex flex-col items-center justify-center space-y-6"
               >
-                {/* Fingerprint / Face scanner with radar scanning bar */}
-                <div className="relative">
-                  {/* Scanner outer ring */}
-                  <div className="absolute inset-0 bg-blue-500/10 rounded-full animate-ping duration-1000"></div>
-                  
-                  <div className="relative p-7 bg-slate-900 border border-blue-500/30 rounded-full text-blue-400 overflow-hidden w-28 h-28 flex items-center justify-center shadow-lg shadow-blue-500/10">
-                    {simType === 'touch' ? (
-                      <Fingerprint className="h-16 w-16 stroke-[1.25] text-blue-400 animate-pulse" />
-                    ) : (
-                      <Smartphone className="h-16 w-16 stroke-[1.25] text-blue-400 animate-pulse" />
-                    )}
+                {/* Camera Stage / Rounded Scanner Frame */}
+                <div className="relative w-48 h-48 rounded-full border-2 border-slate-800 bg-slate-950 flex items-center justify-center overflow-hidden shadow-2xl group" id="face-scanner-viewport">
+                  {/* Loading Models overlay */}
+                  {isLoadingModels && (
+                    <div className="absolute inset-0 bg-slate-950 flex flex-col items-center justify-center p-4 space-y-3 z-30">
+                      <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
+                      <span className="text-[9px] font-mono text-slate-400 text-center uppercase tracking-wider">
+                        Loading Models...
+                      </span>
+                    </div>
+                  )}
 
-                    {/* Scanning line moving down */}
-                    <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-400 shadow-[0_0_10px_#22d3ee] animate-bounce w-full" style={{ animationDuration: '2s' }}></div>
-                  </div>
+                  {/* Permission Denied overlay */}
+                  {!isLoadingModels && permissionGranted === false && (
+                    <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center space-y-4 z-20">
+                      <ShieldAlert className="h-6 w-6 text-rose-500" />
+                      <span className="text-xs text-slate-300 font-semibold leading-relaxed">
+                        Camera Access Denied
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Video feed */}
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-350 ${permissionGranted && !isLoadingModels ? 'opacity-100' : 'opacity-0'
+                      }`}
+                    id="webcam-preview-login"
+                  />
+
+                  {/* High-tech HUD overlays */}
+                  {permissionGranted && !isLoadingModels && (
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
+                      {/* Round Reticle Guide */}
+                      <div className="w-40 h-40 rounded-full border border-dashed border-blue-500/80 animate-pulse" />
+
+                      {/* Horizontal scanning laser */}
+                      <motion.div
+                        initial={{ top: '15%' }}
+                        animate={{ top: '85%' }}
+                        transition={{ repeat: Infinity, repeatType: 'reverse', duration: 1.8, ease: 'easeInOut' }}
+                        className="absolute left-4 right-4 h-0.5 bg-blue-500 shadow-[0_0_8px_rgba(37,99,235,0.8)]"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                {/* Progress reporting */}
+                {/* Progress bar and status */}
                 <div className="w-full space-y-3 text-center">
                   <div className="space-y-1">
                     <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest block">Active Scan Ledger Link</span>
@@ -384,9 +498,22 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
                     ></div>
                   </div>
                   <span className="text-[10px] font-mono text-slate-400 font-bold">{scanProgress}% SECURED</span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopCamera();
+                      setAuthState('idle');
+                    }}
+                    className="text-xs text-slate-400 hover:text-white transition mt-2 block mx-auto underline"
+                  >
+                    Cancel Scan
+                  </button>
                 </div>
               </motion.div>
             )}
+
+            {/* Simulation view removed */}
 
             {authState === 'simulation-success' && (
               <motion.div
@@ -410,7 +537,7 @@ export function BiometricVerificationModal({ onClose, onSuccess }: BiometricVeri
                   <div className="p-2 bg-slate-900/60 border border-slate-800/80 rounded-xl mt-4 max-w-sm mx-auto text-left flex gap-2">
                     <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5"></div>
                     <span className="text-[9px] font-mono text-slate-400 leading-normal">
-                      <strong>Node Log:</strong> auth_sig_gen_success: user="Alexander Sterling" status="approved_multi_sig" signature="0x7a8c...9f2e"
+                      <strong>Node Log:</strong> auth_sig_gen_success: user="{userDisplayName}" status="approved_multi_sig" signature="0x7a8c...9f2e"
                     </span>
                   </div>
                 </div>

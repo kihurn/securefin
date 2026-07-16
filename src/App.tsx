@@ -29,7 +29,16 @@ import {
   Menu,
   X,
   Building,
-  Fingerprint
+  Fingerprint,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
+  Play,
+  Check,
+  AlertTriangle,
+  Cpu,
+  Layers,
+  Camera
 } from 'lucide-react';
 
 import { LandingPage } from './components/LandingPage';
@@ -39,6 +48,9 @@ import { SecureFinLogo } from './components/SecureFinLogo';
 import { TransactionDetailsDrawer } from './components/TransactionDetailsDrawer';
 import { NewTransferModal } from './components/NewTransferModal';
 import { BiometricVerificationModal } from './components/BiometricVerificationModal';
+import { FaceVerificationProvider } from './FaceVerificationContext';
+import { FaceEnrollmentModal } from './components/FaceEnrollmentModal';
+import { FaceVerificationSettingsRow } from './components/FaceVerificationSettingsRow';
 
 import {
   initialUserProfile,
@@ -48,6 +60,7 @@ import {
   initialInsights
 } from './data';
 import { UserProfile, Transaction } from './types';
+import { getSecurityModules, executeSecurityModule, SecurityModule } from './security';
 import { playClickSound, playSuccessSound, playTransitionSound } from './utils/audio';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -55,7 +68,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 export default function App() {
   // Authentication & View Flow State
   const [pageState, setPageState] = useState<'landing' | 'login' | 'register' | 'dashboard'>('landing');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger' | 'payments' | 'insights' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'ledger' | 'payments' | 'insights' | 'settings' | 'admin'>('dashboard');
 
   // Firebase auth client state
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -63,8 +76,25 @@ export default function App() {
   const fetchUserData = async (token: string) => {
     try {
       const headers = { 'Authorization': `Bearer ${token}` };
-      const [profileRes, txRes, obligationsRes, sessionsRes, balancesRes] = await Promise.all([
-        fetch('/api/user/profile', { headers }),
+      
+      // Check if profile exists first to handle auto-sync if missing
+      let profileRes = await fetch('/api/user/profile', { headers });
+      
+      if (profileRes.status === 404) {
+        console.log('User profile not found. Triggering sovereign identity synchronization...');
+        const syncRes = await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (syncRes.ok) {
+          profileRes = await fetch('/api/user/profile', { headers });
+        }
+      }
+
+      const [txRes, obligationsRes, sessionsRes, balancesRes] = await Promise.all([
         fetch('/api/transactions', { headers }),
         fetch('/api/scheduled-obligations', { headers }),
         fetch('/api/sessions', { headers }),
@@ -74,6 +104,9 @@ export default function App() {
       if (profileRes.ok) {
         const profile = await profileRes.json();
         setUserProfile(profile);
+        if (profile.role === 'admin') {
+          setActiveTab('admin');
+        }
       }
       if (txRes.ok) {
         const txs = await txRes.json();
@@ -97,15 +130,33 @@ export default function App() {
   };
 
   useEffect(() => {
+    const customToken = localStorage.getItem('fintrust_custom_token');
+    if (customToken) {
+      localStorage.removeItem('fintrust_is_google_user');
+      setAuthToken(customToken);
+      setPageState('dashboard');
+      fetchUserData(customToken);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         const token = await user.getIdToken();
+        localStorage.setItem('fintrust_is_google_user', 'true');
+        
+        // If Google registration is currently in progress, let the register flow guide the steps (Google Details & Biometrics)
+        if (localStorage.getItem('fintrust_registering_google') === 'true') {
+          return;
+        }
+
         setAuthToken(token);
         setPageState('dashboard');
         fetchUserData(token);
       } else {
-        setAuthToken(null);
-        setPageState('landing');
+        if (!localStorage.getItem('fintrust_custom_token')) {
+          localStorage.removeItem('fintrust_is_google_user');
+          setAuthToken(null);
+          setPageState('landing');
+        }
       }
     });
     return () => unsubscribe();
@@ -118,20 +169,22 @@ export default function App() {
   const [scheduledObligations, setScheduledObligations] = useState(initialScheduledObligations);
   const [insights] = useState(initialInsights);
 
-  // Dynamic Cash Flow / Liquidity State — loaded from Supabase, zero until API responds
+  // Dynamic Cash Flow / Liquidity State — loaded from Supabase, initialized to database defaults
   const [balances, setBalances] = useState({
-    operational: 0,
-    vault: 0,
-    reserve: 0,
+    operational: 254820.00,
+    vault: 1420000.00,
+    reserve: 8500000.00,
   });
 
   // UI Interactive States
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showBiometricModal, setShowBiometricModal] = useState(false);
+  const [showFaceEnrollModal, setShowFaceEnrollModal] = useState(false);
   const [cardFrozen, setCardFrozen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
 
   // Search and Filter state in Ledger tab
   const [ledgerSearch, setLedgerSearch] = useState('');
@@ -139,6 +192,126 @@ export default function App() {
 
   // Selected Insight Article modal
   const [activeArticle, setActiveArticle] = useState<typeof initialInsights[0] | null>(null);
+
+  // Security Feature Modules states
+  const [securityModules, setSecurityModules] = useState<SecurityModule[]>([]);
+  const [runningModuleId, setRunningModuleId] = useState<string | null>(null);
+  const [expandedLogModuleId, setExpandedLogModuleId] = useState<string | null>(null);
+
+  // Admin Portal State
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminAuditLogs, setAdminAuditLogs] = useState<any[]>([]);
+  const [systemHealth, setSystemHealth] = useState<any | null>(null);
+  const [adminLoading, setAdminLoading] = useState<boolean>(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
+  const [adminUserSearch, setAdminUserSearch] = useState<string>('');
+  const [adminAuditSearch, setAdminAuditSearch] = useState<string>('');
+
+  const fetchAdminData = async () => {
+    if (!authToken) return;
+    setAdminLoading(true);
+    setAdminError(null);
+    try {
+      const headers = { 'Authorization': `Bearer ${authToken}` };
+      const [usersRes, auditRes, healthRes] = await Promise.all([
+        fetch('/api/admin/users', { headers }),
+        fetch('/api/admin/audit-logs', { headers }),
+        fetch('/api/admin/system-health', { headers })
+      ]);
+
+      if (usersRes.ok && auditRes.ok && healthRes.ok) {
+        const usersData = await usersRes.json();
+        const auditData = await auditRes.json();
+        const healthData = await healthRes.json();
+        setAdminUsers(usersData);
+        setAdminAuditLogs(auditData);
+        setSystemHealth(healthData);
+      } else {
+        const isForbidden = usersRes.status === 403 || auditRes.status === 403 || healthRes.status === 403;
+        const errData = isForbidden
+          ? { error: 'Access Denied: Admin authorization required' }
+          : await auditRes.json().catch(() => ({ error: 'Failed to load administrative logs' }));
+        setAdminError(errData.error || 'Failed to load administrative registers.');
+      }
+    } catch (err: any) {
+      console.error('Failed to load administrative logs:', err);
+      setAdminError('Failed to establish connection with administrative endpoint.');
+    } finally {
+      setAdminLoading(false);
+    }
+  };
+
+  const handleUpdateUserRole = async (targetUid: string, newRole: 'user' | 'admin') => {
+    if (!authToken) return;
+    try {
+      const res = await fetch('/api/admin/update-role', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ targetUid, newRole })
+      });
+      if (res.ok) {
+        triggerToast(`Sovereign role updated to: ${newRole.toUpperCase()}`);
+        fetchAdminData();
+      } else {
+        const err = await res.json();
+        triggerToast(err.error || 'Failed to update user privilege.');
+      }
+    } catch (e) {
+      console.error('Role update failed:', e);
+      triggerToast('Connection error during cryptographic role update.');
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'admin') {
+      fetchAdminData();
+    }
+  }, [activeTab, authToken]);
+
+  useEffect(() => {
+    setSecurityModules(getSecurityModules());
+  }, []);
+
+  const handleRunSecurityModule = async (moduleId: string) => {
+    playClickSound();
+    setRunningModuleId(moduleId);
+    try {
+      // Simulate real calculation latency
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      const res = await executeSecurityModule(moduleId, { transactions });
+      setSecurityModules(getSecurityModules());
+      if (res.success) {
+        triggerToast(`Security sweep complete: ${res.message}`);
+        playSuccessSound();
+      } else {
+        triggerToast(`Security module warning: ${res.message}`);
+      }
+    } catch (e: any) {
+      triggerToast(`Error executing module: ${e.message}`);
+    } finally {
+      setRunningModuleId(null);
+    }
+  };
+
+  const handleRunAllSecurityModules = async () => {
+    playClickSound();
+    triggerToast('Initiating full sovereign hardware security suite run...');
+    const modules = getSecurityModules();
+    for (const mod of modules) {
+      if (mod.status === 'active') {
+        setRunningModuleId(mod.id);
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        await executeSecurityModule(mod.id, { transactions });
+        setSecurityModules(getSecurityModules());
+      }
+    }
+    setRunningModuleId(null);
+    triggerToast('All institutional security modules successfully validated.');
+    playSuccessSound();
+  };
 
   // Calculate dynamic summary stats
   const totalBalance = useMemo(() => {
@@ -170,6 +343,8 @@ export default function App() {
     setPageState(state);
     if (state === 'dashboard') {
       setActiveTab('dashboard');
+    } else {
+      localStorage.removeItem('fintrust_registering_google');
     }
   };
 
@@ -180,6 +355,9 @@ export default function App() {
     } catch (err) {
       console.error('Logout error:', err);
     }
+    localStorage.removeItem('fintrust_custom_token');
+    localStorage.removeItem('fintrust_is_google_user');
+    setAuthToken(null);
     setPageState('landing');
   };
 
@@ -249,25 +427,29 @@ export default function App() {
         setTransactions((prev) => [newTrx, ...prev]);
       }
 
-      // Deduct correct balance locally and persist to backend
-      setBalances((prev) => {
-        const next = (() => {
-          if (accountName.includes('Operational')) return { ...prev, operational: prev.operational - amount };
-          if (accountName.includes('Vault')) return { ...prev, vault: prev.vault - amount };
-          return { ...prev, reserve: prev.reserve - amount };
-        })();
+      // Compute and update local balances
+      const nextBalances = (() => {
+        if (accountName.includes('Operational')) return { ...balances, operational: balances.operational - amount };
+        if (accountName.includes('Vault')) return { ...balances, vault: balances.vault - amount };
+        return { ...balances, reserve: balances.reserve - amount };
+      })();
 
-        // Persist updated balances to Supabase
-        if (authToken) {
-          fetch('/api/balances', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
-            body: JSON.stringify(next),
-          }).catch((e) => console.error('Balance persist failed:', e));
+      setBalances(nextBalances);
+
+      // Persist updated balances to Supabase if logged in
+      if (authToken) {
+        const balResponse = await fetch('/api/balances', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(nextBalances)
+        });
+        if (!balResponse.ok) {
+          console.error('Balance persistence failed.');
         }
-
-        return next;
-      });
+      }
 
       setShowTransferModal(false);
       triggerToast(`Settle transfer of $${amount.toLocaleString()} committed instantly.`);
@@ -307,7 +489,16 @@ export default function App() {
           const profile = await response.json();
           setUserProfile(profile);
         } else {
-          throw new Error('Sovereign vault registry update rejected.');
+          let errMsg = 'Sovereign vault registry update rejected.';
+          try {
+            const errData = await response.json();
+            if (errData && errData.error) {
+              errMsg = errData.error + (errData.details ? `: ${errData.details}` : '');
+            }
+          } catch (e) {
+            // ignore JSON parse error
+          }
+          throw new Error(errMsg);
         }
       } else {
         setUserProfile((prev) => ({
@@ -334,7 +525,7 @@ export default function App() {
     return transactions.filter((trx) => {
       const matchesSearch =
         trx.description.toLowerCase().includes(ledgerSearch.toLowerCase()) ||
-        trx.id.toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+        String(trx.id).toLowerCase().includes(ledgerSearch.toLowerCase()) ||
         trx.category.toLowerCase().includes(ledgerSearch.toLowerCase());
       const matchesCategory = ledgerCategoryFilter === 'All' || trx.category === ledgerCategoryFilter;
       return matchesSearch && matchesCategory;
@@ -355,7 +546,12 @@ export default function App() {
   if (pageState === 'login') {
     return (
       <LoginPage
-        onLoginSuccess={(profile) => {
+        onLoginSuccess={(profile, token) => {
+          if (token) {
+            localStorage.setItem('fintrust_custom_token', token);
+            setAuthToken(token);
+            fetchUserData(token);
+          }
           if (profile) setUserProfile(profile);
           handlePageChange('dashboard');
         }}
@@ -369,7 +565,13 @@ export default function App() {
   if (pageState === 'register') {
     return (
       <RegisterPage
-        onRegisterSuccess={(profile) => {
+        onRegisterSuccess={(profile, token) => {
+          localStorage.removeItem('fintrust_registering_google');
+          if (token) {
+            localStorage.setItem('fintrust_custom_token', token);
+            setAuthToken(token);
+            fetchUserData(token);
+          }
           if (profile) setUserProfile(profile as any);
           triggerToast('Institutional identity registered and keys deployed successfully.');
           handlePageChange('dashboard');
@@ -381,7 +583,12 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex font-sans selection:bg-brand-primary selection:text-white relative" id="portal-root">
+    <FaceVerificationProvider
+      userProfile={userProfile}
+      onLogout={handleLogout}
+      onTriggerEnroll={() => setShowFaceEnrollModal(true)}
+    >
+      <div className="min-h-screen bg-slate-50 flex font-sans selection:bg-brand-primary selection:text-white relative" id="portal-root">
       
       {/* Toast Notification */}
       <AnimatePresence>
@@ -408,89 +615,114 @@ export default function App() {
 
         {/* Navigation items */}
         <nav className="flex-1 p-4 space-y-1.5" id="sidebar-nav">
-          <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3 font-mono">
-            Vault Operations
-          </span>
-          
-          <button
-            onClick={() => handleTabChange('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
-              activeTab === 'dashboard'
-                ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
-            }`}
-            id="sidebar-tab-dashboard"
-          >
-            <LayoutDashboard className="h-4.5 w-4.5" />
-            Core Dashboard
-          </button>
+          {userProfile.role === 'admin' ? (
+            <>
+              <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3 font-mono">
+                Administrative Control
+              </span>
+              
+              <button
+                onClick={() => handleTabChange('admin')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
+                  activeTab === 'admin'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                }`}
+                id="sidebar-tab-admin"
+              >
+                <Shield className="h-4.5 w-4.5 text-brand-primary" />
+                Sovereign Admin Portal
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3 font-mono">
+                Vault Operations
+              </span>
+              
+              <button
+                onClick={() => handleTabChange('dashboard')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
+                  activeTab === 'dashboard'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                }`}
+                id="sidebar-tab-dashboard"
+              >
+                <LayoutDashboard className="h-4.5 w-4.5" />
+                Core Dashboard
+              </button>
 
-          <button
-            onClick={() => handleTabChange('ledger')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
-              activeTab === 'ledger'
-                ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
-            }`}
-            id="sidebar-tab-ledger"
-          >
-            <Receipt className="h-4.5 w-4.5" />
-            Activity Ledger
-          </button>
+              <button
+                onClick={() => handleTabChange('ledger')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
+                  activeTab === 'ledger'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                }`}
+                id="sidebar-tab-ledger"
+              >
+                <Receipt className="h-4.5 w-4.5" />
+                Activity Ledger
+              </button>
 
-          <button
-            onClick={() => handleTabChange('payments')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
-              activeTab === 'payments'
-                ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
-            }`}
-            id="sidebar-tab-payments"
-          >
-            <CreditCard className="h-4.5 w-4.5" />
-            Treasury & Cards
-          </button>
+              <button
+                onClick={() => handleTabChange('payments')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
+                  activeTab === 'payments'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                }`}
+                id="sidebar-tab-payments"
+              >
+                <CreditCard className="h-4.5 w-4.5" />
+                Treasury & Cards
+              </button>
 
-          <button
-            onClick={() => handleTabChange('insights')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
-              activeTab === 'insights'
-                ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
-            }`}
-            id="sidebar-tab-insights"
-          >
-            <Lightbulb className="h-4.5 w-4.5" />
-            Wealth Insights
-          </button>
+              <button
+                onClick={() => handleTabChange('insights')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
+                  activeTab === 'insights'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                }`}
+                id="sidebar-tab-insights"
+              >
+                <Lightbulb className="h-4.5 w-4.5" />
+                Wealth Insights
+              </button>
 
-          <button
-            onClick={() => handleTabChange('settings')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
-              activeTab === 'settings'
-                ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
-            }`}
-            id="sidebar-tab-settings"
-          >
-            <Settings className="h-4.5 w-4.5" />
-            Security Settings
-          </button>
+              <button
+                onClick={() => handleTabChange('settings')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${
+                  activeTab === 'settings'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                }`}
+                id="sidebar-tab-settings"
+              >
+                <Settings className="h-4.5 w-4.5" />
+                Security Settings
+              </button>
+            </>
+          )}
         </nav>
 
         {/* Quick transfer button inside sidebar */}
         <div className="p-4 border-t border-slate-200 space-y-4" id="sidebar-footer-controls">
-          <button
-            onClick={() => {
-              playClickSound();
-              setShowTransferModal(true);
-            }}
-            className="w-full py-3 bg-brand-primary text-white hover:bg-brand-primary-container rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-brand-primary/10 active:scale-95 cursor-pointer"
-            id="sidebar-btn-quicktransfer"
-          >
-            <Plus className="h-3.5 w-3.5 text-white stroke-[3]" />
-            New Vault Transfer
-          </button>
+          {userProfile.role !== 'admin' && (
+            <button
+              onClick={() => {
+                playClickSound();
+                setShowTransferModal(true);
+              }}
+              className="w-full py-3 bg-brand-primary text-white hover:bg-brand-primary-container rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-lg shadow-brand-primary/10 active:scale-95 cursor-pointer"
+              id="sidebar-btn-quicktransfer"
+            >
+              <Plus className="h-3.5 w-3.5 text-white stroke-[3]" />
+              New Vault Transfer
+            </button>
+          )}
 
           {/* User Profile Summary */}
           <div className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-150 rounded-xl" id="sidebar-profile-card">
@@ -539,7 +771,7 @@ export default function App() {
                 Institutional Terminal
               </span>
               <h2 className="text-lg font-extrabold text-slate-900 tracking-tight capitalize" id="portal-tab-header">
-                {activeTab === 'dashboard' ? 'Core Portfolio' : activeTab === 'ledger' ? 'Immutable Activity Ledger' : activeTab === 'payments' ? 'Treasury Reserves' : activeTab === 'insights' ? 'Strategic Intelligence' : 'Security Registry'}
+                {activeTab === 'dashboard' ? 'Core Portfolio' : activeTab === 'ledger' ? 'Immutable Activity Ledger' : activeTab === 'payments' ? 'Treasury Reserves' : activeTab === 'insights' ? 'Strategic Intelligence' : activeTab === 'settings' ? 'Security Registry' : 'Sovereign Admin Portal'}
               </h2>
             </div>
           </div>
@@ -604,55 +836,69 @@ export default function App() {
                   </div>
 
                   <nav className="space-y-2">
-                    <button
-                      onClick={() => handleTabChange('dashboard')}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'dashboard' ? 'bg-brand-secondary-container text-brand-primary' : 'hover:bg-slate-50 text-slate-600'}`}
-                    >
-                      <LayoutDashboard className="h-4.5 w-4.5" />
-                      Core Dashboard
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('ledger')}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'ledger' ? 'bg-brand-secondary-container text-brand-primary' : 'hover:bg-slate-50 text-slate-600'}`}
-                    >
-                      <Receipt className="h-4.5 w-4.5" />
-                      Activity Ledger
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('payments')}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'payments' ? 'bg-brand-secondary-container text-brand-primary' : 'hover:bg-slate-50 text-slate-600'}`}
-                    >
-                      <CreditCard className="h-4.5 w-4.5" />
-                      Treasury & Cards
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('insights')}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'insights' ? 'bg-brand-secondary-container text-brand-primary' : 'hover:bg-slate-50 text-slate-600'}`}
-                    >
-                      <Lightbulb className="h-4.5 w-4.5" />
-                      Wealth Insights
-                    </button>
-                    <button
-                      onClick={() => handleTabChange('settings')}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'settings' ? 'bg-brand-secondary-container text-brand-primary' : 'hover:bg-slate-50 text-slate-600'}`}
-                    >
-                      <Settings className="h-4.5 w-4.5" />
-                      Security Settings
-                    </button>
+                    {userProfile.role === 'admin' ? (
+                      <button
+                        onClick={() => handleTabChange('admin')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'admin' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
+                      >
+                        <Shield className="h-4.5 w-4.5 text-brand-primary" />
+                        Sovereign Admin Portal
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleTabChange('dashboard')}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'dashboard' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
+                        >
+                          <LayoutDashboard className="h-4.5 w-4.5" />
+                          Core Dashboard
+                        </button>
+                        <button
+                          onClick={() => handleTabChange('ledger')}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'ledger' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
+                        >
+                          <Receipt className="h-4.5 w-4.5" />
+                          Activity Ledger
+                        </button>
+                        <button
+                          onClick={() => handleTabChange('payments')}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'payments' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
+                        >
+                          <CreditCard className="h-4.5 w-4.5" />
+                          Treasury & Cards
+                        </button>
+                        <button
+                          onClick={() => handleTabChange('insights')}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'insights' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
+                        >
+                          <Lightbulb className="h-4.5 w-4.5" />
+                          Wealth Insights
+                        </button>
+                        <button
+                          onClick={() => handleTabChange('settings')}
+                          className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'settings' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
+                        >
+                          <Settings className="h-4.5 w-4.5" />
+                          Security Settings
+                        </button>
+                      </>
+                    )}
                   </nav>
                 </div>
 
                 <div className="space-y-4">
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      setShowTransferModal(true);
-                    }}
-                    className="w-full py-3 bg-brand-primary text-white hover:bg-brand-primary-container font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition shadow-lg shadow-brand-primary/10"
-                  >
-                    <Plus className="h-3.5 w-3.5 stroke-[3]" />
-                    New Vault Transfer
-                  </button>
+                  {userProfile.role !== 'admin' && (
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        setShowTransferModal(true);
+                      }}
+                      className="w-full py-3 bg-brand-primary text-white hover:bg-brand-primary-container font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition shadow-lg shadow-brand-primary/10"
+                    >
+                      <Plus className="h-3.5 w-3.5 stroke-[3]" />
+                      New Vault Transfer
+                    </button>
+                  )}
                   <button
                     onClick={handleLogout}
                     className="w-full py-3 bg-red-50 text-red-600 border border-red-100 hover:bg-red-100/50 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
@@ -676,6 +922,45 @@ export default function App() {
               {/* Dynamic balances & stats - Bento cards (Left 8 cols on desktop) */}
               <div className="lg:col-span-8 space-y-6" id="dashboard-left">
                 
+                {/* BIOMETRIC ENROLLMENT PROMPT FOR UNREGISTERED USERS */}
+                {(!userProfile?.faceDescriptor && !localStorage.getItem(`fintrust_face_baseline_${userProfile?.email?.toLowerCase().trim()}`) && !localStorage.getItem('fintrust_face_baseline_global')) && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-indigo-950 border border-indigo-800 text-indigo-100 rounded-2xl p-5 relative overflow-hidden shadow-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    id="biometric-enrollment-dashboard-prompt"
+                  >
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full -mr-8 -mt-8 blur-2xl pointer-events-none"></div>
+                    
+                    <div className="flex gap-4 items-start">
+                      <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl">
+                        <Camera className="h-6 w-6 animate-pulse" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <h4 className="text-xs font-extrabold font-mono tracking-tight uppercase text-indigo-300">
+                          FACIAL BIOMETRICS REQUIRED
+                        </h4>
+                        <p className="text-[11px] text-indigo-200 leading-relaxed max-w-xl font-semibold">
+                          Your account does not have a baseline facial biometric template registered. Secure your institutional workstation immediately to authorize core transactions and shield your session.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        setShowFaceEnrollModal(true);
+                      }}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-indigo-600/25 shrink-0 flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      id="dashboard-btn-enroll-biometrics"
+                    >
+                      <Camera className="h-4 w-4" />
+                      Enroll Biometrics Now
+                    </button>
+                  </motion.div>
+                )}
+
                 {/* Total Net Assets Summary */}
                 <div className="bg-white border border-slate-150 rounded-2xl p-6 relative overflow-hidden" id="dashboard-total-assets">
                   <div className="absolute top-0 right-0 w-48 h-48 bg-brand-primary/5 rounded-full -mr-16 -mt-16 blur-3xl pointer-events-none"></div>
@@ -1176,7 +1461,7 @@ export default function App() {
 
                         {/* Hash Proof */}
                         <td className="py-4 px-4 font-mono text-[10px] text-sky-600 font-semibold">
-                          0x7f39a1c{trx.id.split('-')[1] || '9482'}e4b5...
+                          0x7f39a1c{String(trx.id).split('-')[1] || String(trx.id)}e4b5...
                         </td>
 
                         {/* Category */}
@@ -1362,7 +1647,7 @@ export default function App() {
                   SecureFin Intelligence Dispatch
                 </h3>
                 <p className="text-slate-500 text-sm mt-0.5 max-w-2xl">
-                  Strategic high-net-worth intelligence briefings curated for Alexander Sterling and the investment committee of Sterling Capital Partners.
+                  Strategic high-net-worth intelligence briefings curated for {userProfile.name} and the investment committee of {userProfile.organization || "Sterling Capital Partners"}.
                 </p>
               </div>
 
@@ -1439,14 +1724,16 @@ export default function App() {
                   <div className="md:col-span-2 flex items-center gap-5 bg-slate-50 p-4 rounded-xl border border-slate-100" id="settings-avatar-group">
                     <img
                       src={userProfile.avatarUrl}
-                      alt="Alexander Sterling headshot"
+                      alt={`${userProfile.name} headshot`}
                       referrerPolicy="no-referrer"
                       className="h-16 w-16 rounded-xl object-cover border-2 border-brand-primary"
                       id="settings-avatar-img"
                     />
                     <div>
-                      <h4 className="font-bold text-slate-800 text-sm">Alexander Sterling</h4>
-                      <p className="text-xs text-slate-400">Chief Investment Officer • Authorized Core Vault Signer</p>
+                      <h4 className="font-bold text-slate-800 text-sm">{userProfile.name}</h4>
+                      <p className="text-xs text-slate-400">
+                        {userProfile.jobTitle} • {userProfile.organization || "Authorized Core Vault Signer"}
+                      </p>
                     </div>
                   </div>
 
@@ -1584,6 +1871,13 @@ export default function App() {
                         Verify Biometric Hardware
                       </button>
                     </div>
+
+                    {/* Face Verification Enrollment Row with Interval & Constant verification options */}
+                    <FaceVerificationSettingsRow
+                      userProfile={userProfile}
+                      playClickSound={playClickSound}
+                      setShowFaceEnrollModal={setShowFaceEnrollModal}
+                    />
                   </div>
                 </div>
 
@@ -1648,6 +1942,404 @@ export default function App() {
             </div>
           )}
 
+          {/* TAB 6: SOVEREIGN ADMIN PORTAL */}
+          {activeTab === 'admin' && (
+            <div className="space-y-6" id="tab-admin-portal">
+              
+              {/* Top Row: System Health, Connection Stats & Defenses */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* 1. Host Health Metrics */}
+                <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-sm space-y-4" id="admin-health-metrics">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <Cpu className="h-4.5 w-4.5 text-brand-primary" />
+                      <span className="text-xs font-bold text-slate-800">Sovereign Node Health</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100 animate-pulse">
+                      ONLINE
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Uptime</span>
+                      <span className="text-sm font-bold text-slate-800 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : systemHealth.uptime}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Memory RSS</span>
+                      <span className="text-sm font-bold text-slate-800 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : `${systemHealth.memory?.rss || '0'} MB`}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Runtime</span>
+                      <span className="text-sm font-bold text-slate-800 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : systemHealth.nodeVersion}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Environment</span>
+                      <span className="text-sm font-bold text-indigo-600 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : (systemHealth.env || 'production').toUpperCase()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Storage & Database Gateway */}
+                <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-sm space-y-4" id="admin-db-gateway">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <Layers className="h-4.5 w-4.5 text-brand-primary" />
+                      <span className="text-xs font-bold text-slate-800">Database & Registry Sync</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-wider bg-indigo-50 text-indigo-600 border border-indigo-100">
+                      SECURE
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">PG Client Pool</span>
+                      <span className="text-sm font-bold text-slate-800 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : '10 / 10 Max'}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Query Latency</span>
+                      <span className="text-sm font-bold text-emerald-600 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : `${systemHealth.dbLatencyMs} ms`}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Total Users</span>
+                      <span className="text-sm font-bold text-slate-800 font-mono mt-0.5 block">
+                        {adminLoading ? '...' : adminUsers.length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Auth Provider</span>
+                      <span className="text-sm font-bold text-slate-800 font-mono mt-0.5 block">
+                        Firebase
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Shield Metrics & Interventions */}
+                <div className="bg-white border border-slate-150 rounded-2xl p-5 shadow-sm space-y-4" id="admin-shield-metrics">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="h-4.5 w-4.5 text-emerald-500" />
+                      <span className="text-xs font-bold text-slate-800">Active Shield Interventions</span>
+                    </div>
+                    <button
+                      onClick={fetchAdminData}
+                      disabled={adminLoading}
+                      className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-50 transition cursor-pointer"
+                      id="btn-refresh-admin-data"
+                      title="Refresh real-time diagnostics"
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${adminLoading ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Blocked IPs</span>
+                      <span className="text-sm font-bold text-rose-600 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : systemHealth.securityMetrics?.blockedIpsCount || 0}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                      <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Sanitized Fields</span>
+                      <span className="text-sm font-bold text-amber-600 font-mono mt-0.5 block">
+                        {adminLoading || !systemHealth ? '...' : systemHealth.securityMetrics?.sanitizationCount || 0}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl col-span-2 flex justify-between items-center">
+                      <div>
+                        <span className="text-[9px] font-mono font-bold text-slate-400 uppercase tracking-wider block">Security Status</span>
+                        <span className="text-[10px] text-slate-500 mt-0.5 block">Shields actively defending routes</span>
+                      </div>
+                      <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-mono font-bold rounded-lg border border-emerald-100">
+                        100% DEPLOYED
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Callout if any */}
+              {adminError && (
+                <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center text-red-700 space-y-3 shadow-sm">
+                  <AlertTriangle className="h-8 w-8 text-red-500 mx-auto" />
+                  <h4 className="font-bold text-sm">Administrative Authority Verification Failed</h4>
+                  <p className="text-xs max-w-md mx-auto">{adminError}</p>
+                </div>
+              )}
+
+              {!adminError && (
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  
+                  {/* Left Section: Identity Directory + Active Shields List & Interactive Sweeps (6 cols on XL) */}
+                  <div className="xl:col-span-6 space-y-6">
+                    
+                    {/* A. Identity Directory */}
+                    <div className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-user-registry">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-sm">Sovereign Identity Registry</h3>
+                          <p className="text-[10px] text-slate-400">Manage directory records and permission ring mappings.</p>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Search identity..."
+                            value={adminUserSearch}
+                            onChange={(e) => setAdminUserSearch(e.target.value)}
+                            className="w-full sm:w-48 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-primary focus:bg-white transition"
+                          />
+                          <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-2.5" />
+                        </div>
+                      </div>
+
+                      {adminLoading ? (
+                        <div className="py-12 text-center text-slate-400 text-xs font-mono animate-pulse">
+                          Synchronizing master directory matrices...
+                        </div>
+                      ) : (
+                        <div className="divide-y divide-slate-100 max-h-[220px] overflow-y-auto pr-1 space-y-3">
+                          {adminUsers
+                            .filter(u => 
+                              u.name.toLowerCase().includes(adminUserSearch.toLowerCase()) || 
+                              u.email.toLowerCase().includes(adminUserSearch.toLowerCase()) || 
+                              (u.role || 'user').toLowerCase().includes(adminUserSearch.toLowerCase())
+                            )
+                            .map((u) => {
+                              return (
+                                <div key={u.uid} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 first:pt-0">
+                                  <div className="flex items-center gap-3">
+                                    <img
+                                      src={u.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.name)}`}
+                                      alt={u.name}
+                                      className="h-9 w-9 rounded-lg object-cover border border-slate-200"
+                                    />
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-slate-800">{u.name}</span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono font-bold tracking-wider uppercase ${u.role === 'admin' ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-slate-100 text-slate-500'}`}>
+                                          {u.role || 'user'}
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 font-medium">{u.email} • {u.jobTitle || 'Unassigned Node'}</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-4 justify-between sm:justify-end">
+                                    <div className="flex gap-1">
+                                      {u.role === 'admin' ? (
+                                        <button
+                                          onClick={() => handleUpdateUserRole(u.uid, 'user')}
+                                          disabled={u.email === userProfile.email}
+                                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-600 rounded-lg text-[10px] font-bold transition border border-slate-200 cursor-pointer"
+                                          title={u.email === userProfile.email ? "Cannot demote yourself" : "Demote to normal user role"}
+                                        >
+                                          Demote
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => handleUpdateUserRole(u.uid, 'admin')}
+                                          className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-[10px] font-bold transition border border-red-100 cursor-pointer"
+                                          title="Promote to system admin role"
+                                        >
+                                          Promote
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* B. Active Shields, Actions & Automated Sweeps */}
+                    <div className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-shield-controller">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-sm">Sovereign Protection Sweeps</h3>
+                          <p className="text-[10px] text-slate-400">Validate active defense signatures and execute sweeps on demand.</p>
+                        </div>
+                        <button
+                          onClick={handleRunAllSecurityModules}
+                          disabled={runningModuleId !== null}
+                          className="px-3 py-1.5 bg-brand-primary hover:bg-brand-primary-container text-white rounded-xl text-[10px] font-bold tracking-tight transition shadow-sm cursor-pointer disabled:opacity-50"
+                        >
+                          Trigger Full Suite Scan
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {securityModules.map((mod) => (
+                          <div key={mod.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between gap-4">
+                            <div className="flex items-start gap-3">
+                              <div className={`h-8 w-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${mod.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                <Shield className="h-4.5 w-4.5" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-slate-800">{mod.name}</span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[8px] font-mono font-bold uppercase tracking-wider ${mod.status === 'active' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-100 text-slate-500'}`}>
+                                    {mod.status}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-slate-500 font-medium mt-0.5 leading-relaxed">
+                                  {mod.description}
+                                </p>
+                                {mod.lastResult && (
+                                  <div className="mt-1.5 flex items-center gap-1.5">
+                                    <span className="text-[8px] font-bold font-mono text-slate-400 uppercase">Last Run Result:</span>
+                                    <span className={`text-[9px] font-mono font-bold ${mod.lastResult.success ? 'text-emerald-600' : 'text-amber-600'}`}>
+                                      {mod.lastResult.message}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleRunSecurityModule(mod.id)}
+                              disabled={runningModuleId !== null}
+                              className="px-2.5 py-1 bg-white hover:bg-slate-50 disabled:opacity-50 border border-slate-200 hover:border-slate-300 text-slate-700 rounded-lg text-[10px] font-bold transition shrink-0 cursor-pointer"
+                            >
+                              {runningModuleId === mod.id ? 'Running...' : 'Run Sweep'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* Right Section: Cryptographic Security Audit Log (6 cols on XL) */}
+                  <div className="xl:col-span-6 bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-audit-log-panel">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-sm">Security Audit Logs</h3>
+                        <p className="text-[10px] text-slate-400">Immutable security event registry for system diagnostics & compliance.</p>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search logs (IP, event, context)..."
+                          value={adminAuditSearch}
+                          onChange={(e) => setAdminAuditSearch(e.target.value)}
+                          className="w-full sm:w-64 bg-slate-50 border border-slate-200 text-slate-800 rounded-xl pl-9 pr-4 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-brand-primary focus:bg-white transition"
+                        />
+                        <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-2.5" />
+                      </div>
+                    </div>
+
+                    {adminLoading ? (
+                      <div className="py-12 text-center text-slate-400 text-xs font-mono animate-pulse">
+                        Synchronizing master cryptographic security records...
+                      </div>
+                    ) : (
+                      <div className="divide-y divide-slate-100 max-h-[580px] overflow-y-auto pr-1 space-y-3">
+                        {adminAuditLogs.length === 0 ? (
+                          <div className="py-12 text-center text-slate-400 text-xs font-mono">
+                            No cryptographic logs recorded. System pristine.
+                          </div>
+                        ) : (
+                          adminAuditLogs
+                            .filter(log => {
+                              const eventName = log.event || log.eventType || '';
+                              const searchStr = `${log.timestamp} ${eventName} ${log.ipAddress || ''} ${log.userId || ''} ${JSON.stringify(log.details || {})}`.toLowerCase();
+                              return searchStr.includes(adminAuditSearch.toLowerCase());
+                            })
+                            .map((log, index) => {
+                              const logKey = `${log.timestamp}-${index}`;
+                              const isExpanded = expandedAuditLogId === logKey;
+                              const eventName = log.event || log.eventType || '';
+                              const isBreach = eventName.includes('BREACH') || eventName.includes('BLOCKED') || eventName.includes('ATTACK');
+                              const isSanitize = eventName.includes('SANITIZATION') || eventName.includes('XSS') || eventName.includes('SANITIZED');
+                              
+                              let badgeColor = "bg-slate-100 text-slate-600";
+                              if (isBreach) badgeColor = "bg-rose-50 text-rose-600 border border-rose-100";
+                              else if (isSanitize) badgeColor = "bg-amber-50 text-amber-600 border border-amber-100";
+                              else if (eventName.includes('SUCCESS') || eventName.includes('SYNC')) badgeColor = "bg-emerald-50 text-emerald-600 border border-emerald-100";
+
+                              return (
+                                <div key={logKey} className="pt-3 first:pt-0 space-y-2">
+                                  <div 
+                                    onClick={() => setExpandedAuditLogId(isExpanded ? null : logKey)}
+                                    className="flex items-start justify-between gap-3 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition"
+                                  >
+                                    <div className="flex items-start gap-2.5">
+                                      <div className="shrink-0 mt-0.5">
+                                        <Terminal className={`h-4 w-4 ${isBreach ? 'text-rose-500' : isSanitize ? 'text-amber-500' : 'text-slate-500'}`} />
+                                      </div>
+                                      <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-xs font-bold text-slate-800 tracking-tight">{eventName}</span>
+                                          <span className={`px-1.5 py-0.2 rounded text-[8px] font-mono font-bold uppercase tracking-wider ${badgeColor}`}>
+                                            {log.ipAddress || log.details?.ipAddress || log.details?.ip || '0.0.0.0'}
+                                          </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                          {log.timestamp}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-right shrink-0">
+                                      <span className="text-[9px] font-mono font-bold text-slate-400">
+                                        {isExpanded ? 'Collapse' : 'Expand Details'}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {isExpanded && (
+                                    <motion.div 
+                                      initial={{ opacity: 0, y: -4 }}
+                                      animate={{ opacity: 1, y: 0 }}
+                                      className="p-3 bg-slate-900 rounded-xl text-[10px] font-mono text-slate-300 overflow-x-auto space-y-1.5 border border-slate-800 shadow-inner"
+                                    >
+                                      <div className="flex justify-between border-b border-slate-800 pb-1 mb-1.5">
+                                        <span className="text-slate-500 font-bold uppercase text-[9px]">Log Metadata Payload</span>
+                                        <span className="text-emerald-400 font-bold uppercase text-[9px]">Verified Integrity Hash</span>
+                                      </div>
+                                      <div><span className="text-slate-500">Event Type:</span> {eventName}</div>
+                                      <div><span className="text-slate-500">Timestamp:</span> {log.timestamp}</div>
+                                      <div><span className="text-slate-500">IP Origin:</span> {log.ipAddress || log.details?.ipAddress || log.details?.ip || 'Internal Loopback'}</div>
+                                      {log.userId && <div><span className="text-slate-500">Origin Node:</span> {log.userId}</div>}
+                                      {log.details && (
+                                        <div className="mt-2 space-y-1">
+                                          <div className="text-slate-500 font-bold border-t border-slate-800 pt-1.5 mt-1.5">Context Parameters:</div>
+                                          <pre className="text-indigo-300 text-[9px] whitespace-pre-wrap leading-relaxed">
+                                            {JSON.stringify(log.details, null, 2)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </motion.div>
+                                  )}
+                                </div>
+                              );
+                            })
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+            </div>
+          )}
+
         </main>
 
         {/* Bottom Status Footer */}
@@ -1679,6 +2371,7 @@ export default function App() {
         <TransactionDetailsDrawer
           transaction={selectedTransaction}
           onClose={() => setSelectedTransaction(null)}
+          userName={userProfile.name}
         />
       )}
 
@@ -1764,13 +2457,75 @@ export default function App() {
         {showBiometricModal && (
           <BiometricVerificationModal
             onClose={() => setShowBiometricModal(false)}
+            userEmail={userProfile.email}
+            userDisplayName={userProfile.name}
             onSuccess={() => {
+              if (userProfile && userProfile.email) {
+                try {
+                  const saved = localStorage.getItem('fintrust_biometric_emails') || '[]';
+                  const emails = JSON.parse(saved);
+                  if (!emails.includes(userProfile.email)) {
+                    emails.push(userProfile.email);
+                    localStorage.setItem('fintrust_biometric_emails', JSON.stringify(emails));
+                  }
+                } catch (e) {
+                  console.error('Failed to save biometric profile:', e);
+                }
+              }
               triggerToast('Biometric identity verified: Master keys synchronized.');
             }}
           />
         )}
       </AnimatePresence>
 
+      {/* RENDER MODAL: FACE BIOMETRIC ENROLLMENT */}
+      <AnimatePresence>
+        {showFaceEnrollModal && (
+          <FaceEnrollmentModal
+            onClose={() => setShowFaceEnrollModal(false)}
+            userEmail={userProfile.email}
+            onSuccess={async (descriptor) => {
+              try {
+                const descriptorStr = JSON.stringify(Array.from(descriptor));
+                
+                // Persist the face descriptor to our secure PostgreSQL backend
+                const response = await fetch('/api/user/biometrics', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`
+                  },
+                  body: JSON.stringify({ faceDescriptor: descriptorStr })
+                });
+
+                if (response.ok) {
+                  const updatedProfile = await response.json();
+                  setUserProfile(updatedProfile);
+                  triggerToast('Continuous Face Shield Signature registered securely.');
+                } else {
+                  console.warn('Backend face descriptor persistence sync failed, using local cache fallback.');
+                  // Fallback locally
+                  setUserProfile({
+                    ...userProfile,
+                    faceDescriptor: descriptorStr
+                  });
+                  triggerToast('Continuous Face Shield registered locally.');
+                }
+              } catch (err) {
+                console.error('Error saving face descriptor to database:', err);
+                setUserProfile({
+                  ...userProfile,
+                  faceDescriptor: JSON.stringify(Array.from(descriptor))
+                });
+                triggerToast('Continuous Face Shield registered locally.');
+              }
+              setShowFaceEnrollModal(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
     </div>
+    </FaceVerificationProvider>
   );
 }

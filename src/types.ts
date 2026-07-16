@@ -1,6 +1,7 @@
 export interface UserProfile {
   name: string;
   email: string;
+  role?: 'user' | 'admin';
   jobTitle: string;
   organization: string;
   avatarUrl: string;
@@ -10,6 +11,10 @@ export interface UserProfile {
   emailAlerts: boolean;
   pushNotifications: boolean;
   smsMarketing: boolean;
+  faceDescriptor?: string | null;
+  balanceOperational?: number;
+  balanceVault?: number;
+  balanceReserve?: number;
 }
 
 export interface SessionDevice {

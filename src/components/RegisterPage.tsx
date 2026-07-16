@@ -5,10 +5,11 @@ import { ShieldCheck, KeyRound, Loader2, ArrowRight, ChevronLeft, ShieldAlert, C
 import { playClickSound, playSuccessSound, playErrorSound } from '../utils/audio';
 import { UserProfile } from '../types';
 import { auth } from '../lib/firebase.ts';
-import { signInWithCredential, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithCredential, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { FaceRegistration } from './FaceRegistration';
 
 interface RegisterPageProps {
-  onRegisterSuccess: (profile: Partial<UserProfile>) => void;
+  onRegisterSuccess: (profile: Partial<UserProfile>, token?: string) => void;
   onBackToHome: () => void;
   onGoToLogin: () => void;
 }
@@ -18,7 +19,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   onBackToHome,
   onGoToLogin,
 }) => {
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<1 | 2 | 'google-setup' | 'biometrics'>(1);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -34,82 +35,51 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(true);
   const [termsAccepted, setTermsAccepted] = useState(false);
 
-  const handleGoogleRegister = () => {
-    playClickSound();
-    
-    if (!name || !jobTitle || !organization) {
-      setErrorMessage('Please fill out Name, Job Title, and Organization first, then click Register with Google to securely link your account.');
-      playErrorSound();
-      return;
-    }
+  // Google specific state
+  const [googleUser, setGoogleUser] = useState<{
+    name: string;
+    email: string;
+    idToken: string;
+    accessToken: string;
+    photoURL?: string;
+  } | null>(null);
 
+  const handleGoogleRegister = async () => {
+    playClickSound();
     setIsLoading(true);
     setErrorMessage('');
+    localStorage.setItem('fintrust_registering_google', 'true');
 
-    const width = 550;
-    const height = 650;
-    const left = window.screen.width / 2 - width / 2;
-    const top = window.screen.height / 2 - height / 2;
-    const popup = window.open(
-      '/auth-popup',
-      'auth_popup',
-      `width=${width},height=${height},left=${left},top=${top}`
-    );
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      const idToken = await user.getIdToken();
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      const googleAccessToken = credential?.accessToken || '';
 
-    if (!popup) {
-      setErrorMessage('Please allow popups to register with Google.');
-      setIsLoading(false);
+      setGoogleUser({
+        name: user.displayName || user.email?.split('@')[0] || '',
+        email: user.email || '',
+        idToken: idToken,
+        accessToken: googleAccessToken || '',
+        photoURL: user.photoURL || '',
+      });
+
+      // Pre-populate fields for Google verification sync step
+      setJobTitle('Corporate Node Administrator');
+      setOrganization('FinTrust Global Node');
+      setTwoFactorEnabled(true);
+      setTermsAccepted(false);
+      setStep('google-setup');
+    } catch (error: any) {
+      console.error('Google registration error:', error);
+      setErrorMessage(error.message || 'Google identity registration aborted or failed.');
+      localStorage.removeItem('fintrust_registering_google');
       playErrorSound();
-      return;
+    } finally {
+      setIsLoading(false);
     }
-
-    const handleMessage = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-
-      if (event.data?.type === 'FIREBASE_AUTH_SUCCESS') {
-        window.removeEventListener('message', handleMessage);
-        const { googleIdToken, googleAccessToken } = event.data;
-
-        try {
-          const credential = GoogleAuthProvider.credential(googleIdToken, googleAccessToken);
-          const result = await signInWithCredential(auth, credential);
-          const user = result.user;
-          const idToken = await user.getIdToken();
-
-          // Send sync request to server with custom profile info
-          const response = await fetch('/api/auth/sync', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${idToken}`
-            },
-            body: JSON.stringify({
-              name: name || user.displayName || user.email?.split('@')[0],
-              jobTitle: jobTitle,
-              organization: organization,
-              twoFactorEnabled: twoFactorEnabled,
-              avatarUrl: user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
-            })
-          });
-
-          if (!response.ok) {
-            throw new Error('Failed to synchronize sovereign identity node with the database ledger.');
-          }
-
-          const userProfile = await response.json();
-          playSuccessSound();
-          onRegisterSuccess(userProfile);
-        } catch (error: any) {
-          console.error('Google registration error:', error);
-          setErrorMessage(error.message || 'Google identity registration aborted or failed.');
-          playErrorSound();
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
   };
 
   // Password strength helper
@@ -155,7 +125,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
     setErrorMessage('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     playClickSound();
 
@@ -183,25 +153,102 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
       return;
     }
 
+    setErrorMessage('');
+    setStep('biometrics');
+  };
+
+  const handleGoogleSetupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    playClickSound();
+
+    if (!jobTitle || !organization) {
+      setErrorMessage('Please fill out Corporate Job Title and Organization Name.');
+      playErrorSound();
+      return;
+    }
+
+    if (!termsAccepted) {
+      setErrorMessage('Please review and accept the cryptographic immutable audit disclaimer.');
+      playErrorSound();
+      return;
+    }
+
+    setErrorMessage('');
+    setStep('biometrics');
+  };
+
+  const handleFinalRegistration = async (descriptor?: Float32Array) => {
     setIsLoading(true);
     setErrorMessage('');
 
-    // Simulate key generation and profile commit
-    setTimeout(() => {
-      setIsLoading(false);
-      playSuccessSound();
-      
-      const newProfile: Partial<UserProfile> = {
-        name,
-        email,
-        jobTitle,
-        organization,
-        twoFactorEnabled,
-        avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
-      };
+    const faceDescriptorStr = descriptor ? JSON.stringify(Array.from(descriptor)) : null;
 
-      onRegisterSuccess(newProfile);
-    }, 1500);
+    try {
+      if (googleUser) {
+        // Handle Google sign up sync
+        const response = await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${googleUser.idToken}`
+          },
+          body: JSON.stringify({
+            name: googleUser.name,
+            jobTitle: jobTitle || 'Corporate Node Administrator',
+            organization: organization || 'FinTrust Global Node',
+            twoFactorEnabled: twoFactorEnabled,
+            avatarUrl: googleUser.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(googleUser.name)}`,
+            faceDescriptor: faceDescriptorStr,
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to synchronize sovereign identity node with the database ledger.');
+        }
+
+        const profile = await response.json();
+        setIsLoading(false);
+        playSuccessSound();
+        onRegisterSuccess(profile, googleUser.idToken);
+      } else {
+        // Handle custom email/password registration
+        const response = await fetch('/api/auth/register-custom', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: email,
+            password: password,
+            name: name,
+            jobTitle: jobTitle,
+            organization: organization,
+            twoFactorEnabled: twoFactorEnabled,
+            faceDescriptor: faceDescriptorStr,
+          })
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to synchronize sovereign identity node with the database ledger.');
+        }
+
+        const { profile, token } = await response.json();
+        setIsLoading(false);
+        playSuccessSound();
+        onRegisterSuccess(profile, token);
+      }
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      setIsLoading(false);
+      setErrorMessage(error.message || 'Identity registration failed.');
+      playErrorSound();
+      if (googleUser) {
+        setStep(1); // Back to initial step if google sync fails
+      } else {
+        setStep(2); // Fall back to step 2 on registration error
+      }
+    }
   };
 
   return (
@@ -247,9 +294,12 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
 
           {/* Stepper indicator */}
           <div className="flex items-center justify-center gap-2 mb-8" id="register-stepper">
-            <div className={`h-1.5 rounded-full transition-all duration-350 ${step >= 1 ? 'w-10 bg-brand-primary' : 'w-4 bg-slate-800'}`}></div>
-            <div className={`h-1.5 rounded-full transition-all duration-350 ${step >= 2 ? 'w-10 bg-brand-primary' : 'w-4 bg-slate-800'}`}></div>
-            <span className="text-[10px] font-mono text-slate-500 font-bold ml-2 uppercase">Step {step} of 2</span>
+            <div className={`h-1.5 rounded-full transition-all duration-350 ${step === 1 || step === 2 || step === 'google-setup' || step === 'biometrics' ? 'w-10 bg-brand-primary' : 'w-4 bg-slate-800'}`}></div>
+            <div className={`h-1.5 rounded-full transition-all duration-350 ${step === 2 || step === 'google-setup' || step === 'biometrics' ? 'w-10 bg-brand-primary' : 'w-4 bg-slate-800'}`}></div>
+            <div className={`h-1.5 rounded-full transition-all duration-350 ${step === 'biometrics' ? 'w-10 bg-brand-primary' : 'w-4 bg-slate-800'}`}></div>
+            <span className="text-[10px] font-mono text-slate-500 font-bold ml-2 uppercase">
+              {step === 'google-setup' ? 'Step 2: Google Identity Details' : step === 'biometrics' ? 'Step 3: Biometrics Setup' : `Step ${step === 1 ? '1' : '2'} of 3`}
+            </span>
           </div>
 
           <AnimatePresence mode="wait">
@@ -379,6 +429,172 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   Register with Google Identity
                 </button>
               </motion.form>
+            ) : step === 'biometrics' ? (
+              <motion.div
+                key="step-biometrics"
+                initial={{ opacity: 0, x: 10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                className="space-y-5 w-full relative"
+                id="register-step-biometrics"
+              >
+                {isLoading && (
+                  <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl z-50 space-y-3">
+                    <Loader2 className="h-8 w-8 text-indigo-400 animate-spin" />
+                    <span className="text-xs font-mono text-slate-300 font-bold uppercase tracking-wider text-center">
+                      Deploying Sovereign Node...
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
+                      Synchronizing ledger authority
+                    </span>
+                  </div>
+                )}
+                <FaceRegistration
+                  userEmail={email || googleUser?.email || ''}
+                  onCaptureComplete={(descriptor) => {
+                    handleFinalRegistration(descriptor);
+                  }}
+                  onBack={() => {
+                    if (googleUser) {
+                      setStep('google-setup');
+                    } else {
+                      setStep(2);
+                    }
+                  }}
+                />
+              </motion.div>
+            ) : step === 'google-setup' ? (
+              <motion.form
+                key="google-setup-form"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                onSubmit={handleGoogleSetupSubmit}
+                className="space-y-5"
+                id="register-form-google-setup"
+              >
+                {/* Google user details confirmation banner */}
+                <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 flex items-center gap-3" id="google-profile-banner">
+                  {googleUser?.photoURL ? (
+                    <img src={googleUser.photoURL} alt="Google Avatar" className="w-10 h-10 rounded-full border border-brand-primary" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-white font-mono text-sm border border-slate-700">
+                      {googleUser?.name?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  <div className="truncate flex-1">
+                    <h4 className="text-xs font-bold text-white font-mono truncate">{googleUser?.name}</h4>
+                    <p className="text-[10px] text-slate-400 font-mono truncate">{googleUser?.email}</p>
+                  </div>
+                </div>
+
+                {/* Profile Fields */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Job title */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono flex items-center gap-1">
+                      <Briefcase className="h-3 w-3 text-slate-500" /> Corporate Job Title
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={jobTitle}
+                      onChange={(e) => setJobTitle(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary transition placeholder-slate-600 font-medium"
+                      placeholder="e.g. Chief Executive Officer"
+                      id="google-input-jobtitle"
+                    />
+                  </div>
+
+                  {/* Organization */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono flex items-center gap-1">
+                      <Building2 className="h-3 w-3 text-slate-500" /> Organization Name
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={organization}
+                      onChange={(e) => setOrganization(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary transition placeholder-slate-600 font-medium"
+                      placeholder="e.g. FinTrust Global Inc."
+                      id="google-input-org"
+                    />
+                  </div>
+                </div>
+
+                {/* Toggle Multi-Signature & 2FA */}
+                <div className="bg-slate-900/40 border border-slate-800 rounded-xl p-4 space-y-3" id="google-settings-box">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Require Multi-Signature 2FA</h4>
+                      <p className="text-[10px] text-slate-400 leading-snug">Require smart validation code dispatch on all transfer settlement actions.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        setTwoFactorEnabled(!twoFactorEnabled);
+                      }}
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors ${twoFactorEnabled ? 'bg-brand-primary' : 'bg-slate-700'}`}
+                    >
+                      <div className={`bg-white w-4 h-4 rounded-full shadow-sm transform transition-transform ${twoFactorEnabled ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Terms Acceptance */}
+                <div className="flex gap-2.5 items-start bg-slate-900/25 p-3 border border-slate-850 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setTermsAccepted(!termsAccepted);
+                    }}
+                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition ${
+                      termsAccepted ? 'bg-brand-primary border-transparent text-white' : 'border-slate-700 bg-slate-900'
+                    }`}
+                    id="google-terms-checkbox"
+                  >
+                    {termsAccepted && <Check className="h-3 w-3 stroke-[3]" />}
+                  </button>
+                  <span className="text-[10px] text-slate-400 leading-relaxed font-semibold">
+                    I acknowledge and agree that all transactions and core telemetry logged on SecureFin are recorded to an immutable cryptographic auditing ledger.
+                  </span>
+                </div>
+
+                {errorMessage && (
+                  <div className="p-3 bg-red-950/40 border border-red-900/50 rounded-xl text-xs text-red-400 flex items-center gap-2" id="google-error-msg">
+                    <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
+                    <span>{errorMessage}</span>
+                  </div>
+                )}
+
+                {/* Navigation actions */}
+                <div className="flex gap-3 pt-2" id="google-navigation-group">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      playClickSound();
+                      setGoogleUser(null);
+                      setStep(1);
+                      setErrorMessage('');
+                    }}
+                    className="flex-1 py-3 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-xl text-xs font-bold transition border border-slate-800 active:scale-95"
+                    id="google-btn-back"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-[2] py-3 bg-brand-primary hover:bg-brand-primary-container text-white text-xs font-bold rounded-xl transition shadow-lg shadow-brand-primary/15 flex items-center justify-center gap-1.5 active:scale-95"
+                    id="google-btn-submit"
+                  >
+                    Configure Biometrics Setup
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </motion.form>
             ) : (
               <motion.form
                 key="step-2-form"
@@ -502,21 +718,11 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   </button>
                   <button
                     type="submit"
-                    disabled={isLoading}
-                    className="flex-[2] py-3 bg-brand-primary hover:bg-brand-primary-container text-white text-xs font-bold rounded-xl transition shadow-lg shadow-brand-primary/15 flex items-center justify-center gap-1.5 active:scale-95 disabled:opacity-50"
+                    className="flex-[2] py-3 bg-brand-primary hover:bg-brand-primary-container text-white text-xs font-bold rounded-xl transition shadow-lg shadow-brand-primary/15 flex items-center justify-center gap-1.5 active:scale-95"
                     id="register-btn-submit"
                   >
-                    {isLoading ? (
-                      <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Securing Node Credentials...
-                      </>
-                    ) : (
-                      <>
-                      Deploy Secure Node
-                      <ShieldCheck className="h-4 w-4" />
-                      </>
-                    )}
+                    Configure Biometrics Setup
+                    <ArrowRight className="h-4 w-4" />
                   </button>
                 </div>
               </motion.form>

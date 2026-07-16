@@ -7,11 +7,13 @@ import { playClickSound, playSuccessSound } from '../utils/audio';
 interface TransactionDetailsDrawerProps {
   transaction: Transaction | null;
   onClose: () => void;
+  userName?: string;
 }
 
 export const TransactionDetailsDrawer: React.FC<TransactionDetailsDrawerProps> = ({
   transaction,
   onClose,
+  userName = "Alexander Sterling",
 }) => {
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -234,7 +236,7 @@ export const TransactionDetailsDrawer: React.FC<TransactionDetailsDrawerProps> =
               <div className="relative">
                 <span className="absolute -left-[17px] top-1 h-2 w-2 rounded-full bg-slate-300"></span>
                 <span className="font-mono text-[10px] text-slate-400 block">T-minus 4s</span>
-                <span className="font-semibold text-slate-700">Transaction initialized by Alexander Sterling.</span>
+                <span className="font-semibold text-slate-700">Transaction initialized by {userName}.</span>
               </div>
             </div>
           </div>
