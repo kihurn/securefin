@@ -249,12 +249,13 @@ async function startServer() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          // 1. Connect Sources: Allows API communication with databases & identity managers
+          // 1. Connect Sources: Whitelist securetoken.googleapis.com for Firebase client exchanges
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
             "https://*.firebaseapp.com",
             "https://identitytoolkit.googleapis.com",
+            "https://securetoken.googleapis.com", // <-- ADDED FOR FIREBASE AUTH
             "https://securefin.onrender.com"
           ],
           // 2. Script Sources: Allows local assets and the CDN scripts in your /auth-popup
@@ -263,12 +264,14 @@ async function startServer() {
             "'unsafe-inline'",
             "https://www.gstatic.com"
           ],
-          // 3. Image Sources: Allows local icons, face canvas data, and Dicebear avatars
+          // 3. Image Sources: Whitelist Google User Content so mock illustrations render cleanly
           imgSrc: [
             "'self'",
             "data:",
             "blob:",
-            "https://api.dicebear.com"
+            "https://api.dicebear.com",
+            "https://lh3.googleusercontent.com",       // <-- ADDED FOR CARD & TEXTURES
+            "https://*.googleusercontent.com"          // <-- ADDED FOR CLOUD USER IMAGES
           ],
           // 4. Media Sources: Crucial to keep your Continuous Biometric Shield camera stream active
           mediaSrc: [
