@@ -6,6 +6,7 @@ import path from 'path';
  * 7.) System Activity Logging (creates a secure record of important security events)
  */
 export function logSecurityEvent(event: string, details: any) {
+  if (typeof window !== 'undefined') return;
   try {
     const logsDir = path.join(process.cwd(), 'logs');
     if (!fs.existsSync(logsDir)) {

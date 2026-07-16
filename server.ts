@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import express from "express";
-import path from "path";
-import fs from "fs";
+import path from "node:path";
+import fs from "node:fs";
+import crypto from "node:crypto";
 import { createServer as createViteServer } from "vite";
 import { supabase } from "./src/lib/supabase.ts";
 import { requireAuth, AuthRequest, hashPassword, verifyPassword, generateCustomToken } from "./src/middleware/auth.ts";
@@ -14,6 +15,7 @@ import {
   getBlockedIps,
   getSanitizationCount
 } from "./src/security/index.ts";
+import helmet from "helmet";
 
 // Normalize Supabase snake_case responses to camelCase for the frontend
 const normalizeUser = (u: any) => ({
@@ -242,6 +244,54 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          // 1. Connect Sources: Allows API communication with databases & identity managers
+          connectSrc: [
+            "'self'",
+            "https://*.supabase.co",
+            "https://*.firebaseapp.com",
+            "https://identitytoolkit.googleapis.com",
+            "https://securefin.onrender.com"
+          ],
+          // 2. Script Sources: Allows local assets and the CDN scripts in your /auth-popup
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            "https://www.gstatic.com"
+          ],
+          // 3. Image Sources: Allows local icons, face canvas data, and Dicebear avatars
+          imgSrc: [
+            "'self'",
+            "data:",
+            "blob:",
+            "https://api.dicebear.com"
+          ],
+          // 4. Media Sources: Crucial to keep your Continuous Biometric Shield camera stream active
+          mediaSrc: [
+            "'self'",
+            "blob:",
+            "mediastream:"
+          ],
+          // 5. Clickjacking Prevention: Blocks other sites from rendering your app in an iframe
+          frameAncestors: ["'none'"],
+        },
+      },
+      // Forces browsers to interact with your Render app strictly over HTTPS (HSTS)
+      strictTransportSecurity: {
+        maxAge: 31536000, // 1 year
+        includeSubDomains: true,
+        preload: true,
+      },
+      // Mitigates MIME-type sniffing vulnerabilities
+      noSniff: true,
+      // Prevents leaking user referrers to external sites
+      referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    })
+  );
 
   // In-memory test user store for security suite verification
   interface SecurityTestUser {
@@ -267,7 +317,7 @@ async function startServer() {
     logSecurityEvent('User Registration', { username: sanitizedUsername, password, role });
 
     const passwordHash = hashPassword(password);
-    const userId = `test-uid-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    const userId = `test-uid-${crypto.randomUUID()}`;
 
     testUsers.set(sanitizedUsername, {
       username: sanitizedUsername,
@@ -404,7 +454,7 @@ async function startServer() {
     try {
       const logsPath = path.join(process.cwd(), 'logs', 'security.log');
       let parsedLogs: any[] = [];
-      
+
       if (fs.existsSync(logsPath)) {
         const fileContent = fs.readFileSync(logsPath, 'utf8');
         const lines = fileContent.trim().split('\n');
@@ -437,7 +487,7 @@ async function startServer() {
           }
         ];
       }
-      
+
       // Return newest first
       res.json(parsedLogs.reverse());
     } catch (error: any) {
@@ -453,7 +503,7 @@ async function startServer() {
       const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024 * 100) / 100;
       const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024 * 100) / 100;
       const rssMB = Math.round(mem.rss / 1024 / 1024 * 100) / 100;
-      
+
       // 2. Database connectivity check
       let dbStatus = "Connected";
       let dbLatencyMs = 12; // default
@@ -516,7 +566,7 @@ async function startServer() {
     try {
       const configPath = path.join(process.cwd(), "firebase-applet-config.json");
       const firebaseConfig = fs.readFileSync(configPath, "utf8");
-      
+
       const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -665,7 +715,7 @@ async function startServer() {
 
       // Hash password
       const pwHash = hashPassword(password);
-      const uid = `custom-uid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const uid = `custom-uid-${crypto.randomUUID()}`;
 
       const job_title = jobTitle || "Corporate Node Administrator";
       const organization_val = organization || "FinTrust Global Node";
@@ -755,7 +805,7 @@ async function startServer() {
 
       // If user has a password_hash, verify it. 
       // If user is a seeded default user and doesn't have a password_hash, allow 'password'.
-      const isPasswordValid = user.password_hash 
+      const isPasswordValid = user.password_hash
         ? verifyPassword(password, user.password_hash)
         : (password === 'password' || password === user.password_hash);
 
@@ -809,7 +859,7 @@ async function startServer() {
         const reqDescriptor = safeParseDescriptor(faceDescriptor);
 
         if (!dbDescriptor || !reqDescriptor || dbDescriptor.length !== 128 || reqDescriptor.length !== 128) {
-          console.warn("[Biometric Login] Template dimension mismatch or malformed signatures:", 
+          console.warn("[Biometric Login] Template dimension mismatch or malformed signatures:",
             "db length:", dbDescriptor ? dbDescriptor.length : "null",
             "req length:", reqDescriptor ? reqDescriptor.length : "null"
           );
