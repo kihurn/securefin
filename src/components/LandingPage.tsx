@@ -87,9 +87,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin, onStartR
           <div className="lg:col-span-7 space-y-8" id="landing-hero-text">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-slate-100 border border-slate-200 rounded-full" id="landing-hero-badge">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span className="text-xs font-mono font-semibold text-slate-600 tracking-wider">SECUREFIN v5.1 LIVE</span>
+              <span className="text-xs font-mono font-semibold text-slate-600 tracking-wider">SECUREFIN v5.2 LIVE</span>
             </div>
-            
+
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-950 leading-[1.1]" id="landing-hero-heading">
               Elite Asset & <br />
               <span className="bg-gradient-to-r from-brand-primary to-brand-primary-container bg-clip-text text-transparent">
@@ -138,11 +138,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin, onStartR
           {/* Right Image/Dashboard Column */}
           <div className="lg:col-span-5 relative" id="landing-hero-visual">
             <div className="absolute inset-0 bg-gradient-to-tr from-brand-primary/20 to-blue-500/10 rounded-3xl blur-3xl -z-10 transform scale-95"></div>
-            
+
             {/* Main Interactive Collage Card */}
             <div className="bg-white rounded-2xl border border-slate-150 shadow-2xl p-6 relative overflow-hidden" id="landing-hero-card">
               <div className="absolute top-0 right-0 w-32 h-32 bg-brand-primary/5 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-              
+
               {/* Card Header showing stylized Vault metrics */}
               <div className="flex items-center justify-between pb-6 border-b border-slate-100" id="landing-card-header">
                 <div className="flex items-center gap-2">
@@ -292,7 +292,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartLogin, onStartR
             <span className="font-mono font-bold text-slate-700">&copy; 2026 SecureFin Technologies Inc.</span>
           </div>
           <div className="flex flex-wrap justify-center gap-6 font-medium" id="landing-footer-links">
-            <span className="hover:text-slate-900 cursor-pointer">Security Protocol v5.1</span>
+            <span className="hover:text-slate-900 cursor-pointer">Security Protocol v5.2</span>
             <span className="hover:text-slate-900 cursor-pointer">Service Level Agreement</span>
             <span className="hover:text-slate-900 cursor-pointer">Regulatory Disclosures</span>
             <span className="hover:text-slate-900 cursor-pointer">Privacy Policy</span>
