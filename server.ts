@@ -256,7 +256,6 @@ async function startServer() {
     helmet({
       contentSecurityPolicy: {
         directives: {
-          // Deny everything by default (Remediates the "Deny by Default" scanner penalty)
           defaultSrc: ["'none'"],
           objectSrc: ["'none'"],
           baseUri: ["'self'"],
@@ -271,22 +270,31 @@ async function startServer() {
             "https://securefin.onrender.com"
           ],
 
-          // Remediates "Blocks execution of inline JavaScript" by replacing 'unsafe-inline' with a dynamic nonce
+          // 1. Add 'unsafe-eval' so TensorFlow.js can compile its mathematical engines
           scriptSrc: [
             "'self'",
-            (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`, // Authorizes only our signed scripts
+            (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`,
             "https://*.gstatic.com",
             "https://*.googleapis.com",
-            "https://apis.google.com"
+            "https://apis.google.com",
+            "'unsafe-eval'"                             // <-- CRITICAL FOR TENSORFLOW.JS / FACE-API
           ],
 
-          // Explicitly allows your Tailwind & motion/react runtime styles to load securely
+          // 2. Add Worker/Child Sources so Face-API can process frames in background threads
+          workerSrc: [
+            "'self'",
+            "blob:"                                     // <-- CRITICAL FOR TF.JS BACKGROUND WORKERS
+          ],
+          childSrc: [
+            "'self'",
+            "blob:"
+          ],
+
           styleSrc: [
             "'self'",
             "'unsafe-inline'"
           ],
 
-          // Explicitly allows your local and icon fonts (like lucide-react) to load
           fontSrc: [
             "'self'",
             "data:"
