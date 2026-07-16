@@ -9,11 +9,15 @@ import { requireAuth, AuthRequest, hashPassword, verifyPassword, generateCustomT
 import {
   sanitizeInput,
   logSecurityEvent,
-  rateLimiter,
   errorHandling,
   checkPermission,
   getBlockedIps,
-  getSanitizationCount
+  getSanitizationCount,
+  // Imported updated secure limiter functions [1]:
+  checkFailedAttempts,
+  recordFailedAttempt,
+  resetFailedAttempts,
+  registrationRateLimiter
 } from "./src/security/index.ts";
 import helmet from "helmet";
 
@@ -251,7 +255,7 @@ async function startServer() {
     next();
   });
 
-  // 2. Configure Helmet with strict "Deny-by-Default" rules and cryptographic nonces
+  // 2. Configure Helmet with strict "Deny-by-Default" rules and cryptographic nonces [1]
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -261,7 +265,7 @@ async function startServer() {
           baseUri: ["'self'"],
           formAction: ["'self'"],
 
-          // 1. Connect Sources: Added cdn.jsdelivr.net to permit model fallback downloads
+          // 1. Connect Sources: Allows local, Supabase, and fallback model downloads [1]
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
@@ -269,10 +273,10 @@ async function startServer() {
             "https://*.googleapis.com",
             "https://accounts.google.com",
             "https://securefin.onrender.com",
-            "https://cdn.jsdelivr.net"                 // <-- ADDED FOR MODEL CDN FALLBACKS
+            "https://cdn.jsdelivr.net"
           ],
 
-          // 2. Script Sources: Permits compiling neural weights
+          // 2. Script Sources: Dynamic nonces and mathematical AI compilers [1]
           scriptSrc: [
             "'self'",
             (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`,
@@ -282,7 +286,7 @@ async function startServer() {
             "'unsafe-eval'"
           ],
 
-          // 3. Worker Sources: Parallel background threads
+          // 3. Worker Sources: Runs biometrics securely on background threads [1]
           workerSrc: [
             "'self'",
             "blob:"
@@ -292,18 +296,18 @@ async function startServer() {
             "blob:"
           ],
 
-          // 4. Style Sources: Whitelisted fonts.googleapis.com
+          // 4. Style Sources: Whitelisted dynamic styling [1]
           styleSrc: [
             "'self'",
             "'unsafe-inline'",
-            "https://fonts.googleapis.com"            // <-- ADDED FOR GOOGLE FONTS CSS
+            "https://fonts.googleapis.com"
           ],
 
-          // 5. Font Sources: Whitelisted fonts.gstatic.com
+          // 5. Font Sources: Whitelisted webfonts [1]
           fontSrc: [
             "'self'",
             "data:",
-            "https://fonts.gstatic.com"               // <-- ADDED FOR GOOGLE FONTS WEBFONTS
+            "https://fonts.gstatic.com"
           ],
 
           imgSrc: [
@@ -357,7 +361,7 @@ async function startServer() {
   });
 
   // Security verification test suite endpoints
-  app.post("/api/auth/register", (req, res) => {
+  app.post("/api/auth/register", registrationRateLimiter, (req, res) => {
     const { username, password, role } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
@@ -378,9 +382,12 @@ async function startServer() {
     res.status(201).json({ userId, username: sanitizedUsername, message: 'Test user registered successfully.' });
   });
 
-  app.post("/api/auth/login", rateLimiter, (req, res) => {
+  app.post("/api/auth/login", checkFailedAttempts, (req, res) => {
     const { username, password } = req.body;
+    const ip = req.ip || 'unknown';
+
     if (!username || !password) {
+      recordFailedAttempt(ip);
       return res.status(400).json({ error: 'Username and password are required' });
     }
 
@@ -389,13 +396,18 @@ async function startServer() {
 
     const user = testUsers.get(sanitizedUsername);
     if (!user) {
+      recordFailedAttempt(ip);
       return res.status(401).json({ error: 'Invalid master credentials. Verification failed.' });
     }
 
     const isValid = verifyPassword(password, user.passwordHash);
     if (!isValid) {
+      recordFailedAttempt(ip);
       return res.status(401).json({ error: 'Invalid master credentials. Verification failed.' });
     }
+
+    // Success: reset attempts
+    resetFailedAttempts(ip);
 
     // Generate a valid custom token
     const token = generateCustomToken({
@@ -722,7 +734,7 @@ async function startServer() {
             <svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
               <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
             </svg>
             Retry Google Authorization
@@ -1224,16 +1236,6 @@ async function startServer() {
       const uid = req.firebaseUser!.uid;
 
       const { data: userRecord, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('uid', uid)
-        .single();
-
-      if (userError || !userRecord) {
-        return res.status(404).json({ error: "User mapping unresolved." });
-      }
-
-      const { data, error } = await supabase
         .from('sessions')
         .select('*')
         .eq('user_id', userRecord.id);
