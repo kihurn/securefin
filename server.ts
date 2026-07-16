@@ -249,52 +249,67 @@ async function startServer() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          // 1. Connect Sources: Whitelist securetoken.googleapis.com for Firebase client exchanges
+          // Set object-src to none to improve the overall Observatory security score
+          objectSrc: ["'none'"],
+
+          // 1. Connect Sources: Adds Google accounts connectivity for OAuth exchanges
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
             "https://*.firebaseapp.com",
             "https://identitytoolkit.googleapis.com",
-            "https://securetoken.googleapis.com", // <-- ADDED FOR FIREBASE AUTH
+            "https://securetoken.googleapis.com",
+            "https://accounts.google.com",              // <-- ADDED FOR OAUTH ENDPOINTS
             "https://securefin.onrender.com"
           ],
-          // 2. Script Sources: Allows local assets and the CDN scripts in your /auth-popup
+
+          // 2. Script Sources: Adds apis.google.com for Firebase auth helpers
           scriptSrc: [
             "'self'",
             "'unsafe-inline'",
-            "https://www.gstatic.com"
+            "https://www.gstatic.com",
+            "https://apis.google.com"                   // <-- ADDED FOR GOOGLE AUTH SIGN-IN
           ],
-          // 3. Image Sources: Whitelist Google User Content so mock illustrations render cleanly
+
+          // 3. Image Sources: Whitelisted Google User Content
           imgSrc: [
             "'self'",
             "data:",
             "blob:",
             "https://api.dicebear.com",
-            "https://lh3.googleusercontent.com",       // <-- ADDED FOR CARD & TEXTURES
-            "https://*.googleusercontent.com"          // <-- ADDED FOR CLOUD USER IMAGES
+            "https://lh3.googleusercontent.com",
+            "https://*.googleusercontent.com"
           ],
-          // 4. Media Sources: Crucial to keep your Continuous Biometric Shield camera stream active
+
+          // 4. Media Sources: Webcams and biometric scanners
           mediaSrc: [
             "'self'",
             "blob:",
             "mediastream:"
           ],
-          // 5. Clickjacking Prevention: Blocks other sites from rendering your app in an iframe
+
+          // 5. Frame/Child Sources: Crucial to let Firebase Auth load its persistence iframe
+          frameSrc: [
+            "'self'",
+            "https://*.firebaseapp.com",                // <-- CRITICAL FOR FIREBASE AUTH IFRAME
+            "https://accounts.google.com"               // <-- CRITICAL FOR GOOGLE SIGN-IN INTERFACES
+          ],
+
+          // 6. Clickjacking Prevention
           frameAncestors: ["'none'"],
         },
       },
-      // Forces browsers to interact with your Render app strictly over HTTPS (HSTS)
       strictTransportSecurity: {
-        maxAge: 31536000, // 1 year
+        maxAge: 31536000,
         includeSubDomains: true,
         preload: true,
       },
-      // Mitigates MIME-type sniffing vulnerabilities
       noSniff: true,
-      // Prevents leaking user referrers to external sites
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     })
   );
+
+
 
   // In-memory test user store for security suite verification
   interface SecurityTestUser {
