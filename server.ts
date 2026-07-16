@@ -13,7 +13,7 @@ import {
   checkPermission,
   getBlockedIps,
   getSanitizationCount,
-  // Imported updated secure limiter functions [1]:
+  // Import the correct security functions [1]:
   checkFailedAttempts,
   recordFailedAttempt,
   resetFailedAttempts,
@@ -265,7 +265,7 @@ async function startServer() {
           baseUri: ["'self'"],
           formAction: ["'self'"],
 
-          // 1. Connect Sources: Allows local, Supabase, and fallback model downloads [1]
+          // Connect Sources: Added cdn.jsdelivr.net to permit model fallback downloads [1]
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
@@ -276,7 +276,7 @@ async function startServer() {
             "https://cdn.jsdelivr.net"
           ],
 
-          // 2. Script Sources: Dynamic nonces and mathematical AI compilers [1]
+          // Script Sources: Permits compiling neural weights [1]
           scriptSrc: [
             "'self'",
             (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`,
@@ -286,7 +286,7 @@ async function startServer() {
             "'unsafe-eval'"
           ],
 
-          // 3. Worker Sources: Runs biometrics securely on background threads [1]
+          // Worker Sources: Parallel background threads [1]
           workerSrc: [
             "'self'",
             "blob:"
@@ -296,14 +296,14 @@ async function startServer() {
             "blob:"
           ],
 
-          // 4. Style Sources: Whitelisted dynamic styling [1]
+          // Style Sources: Whitelisted fonts.googleapis.com [1]
           styleSrc: [
             "'self'",
             "'unsafe-inline'",
             "https://fonts.googleapis.com"
           ],
 
-          // 5. Font Sources: Whitelisted webfonts [1]
+          // Font Sources: Whitelisted fonts.gstatic.com [1]
           fontSrc: [
             "'self'",
             "data:",
@@ -360,7 +360,7 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  // Security verification test suite endpoints
+  // Security verification test suite endpoints (Register)
   app.post("/api/auth/register", registrationRateLimiter, (req, res) => {
     const { username, password, role } = req.body;
     if (!username || !password) {
@@ -382,6 +382,7 @@ async function startServer() {
     res.status(201).json({ userId, username: sanitizedUsername, message: 'Test user registered successfully.' });
   });
 
+  // Security verification test suite endpoints (Login)
   app.post("/api/auth/login", checkFailedAttempts, (req, res) => {
     const { username, password } = req.body;
     const ip = req.ip || 'unknown';
@@ -406,7 +407,7 @@ async function startServer() {
       return res.status(401).json({ error: 'Invalid master credentials. Verification failed.' });
     }
 
-    // Success: reset attempts
+    // Success: reset attempts for this IP [1]
     resetFailedAttempts(ip);
 
     // Generate a valid custom token
@@ -755,8 +756,8 @@ async function startServer() {
     }
   });
 
-  // Custom authentication endpoints (failsafe fallback for email/password)
-  app.post("/api/auth/register-custom", async (req, res) => {
+  // Custom authentication endpoints (failsafe fallback for email/password) [1]
+  app.post("/api/auth/register-custom", registrationRateLimiter, async (req, res) => {
     try {
       const { email, password, name, jobTitle, organization, twoFactorEnabled, role } = req.body;
       if (!email || !password || !name) {
@@ -838,10 +839,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login-custom", async (req, res) => {
+  // Custom login endpoint with failed attempts tracking [1]
+  app.post("/api/auth/login-custom", checkFailedAttempts, async (req, res) => {
     try {
       let { email, password } = req.body;
+      const ip = req.ip || 'unknown';
+
       if (!email || !password) {
+        recordFailedAttempt(ip);
         return res.status(400).json({ error: "Missing email or password." });
       }
 
@@ -860,7 +865,8 @@ async function startServer() {
       if (fetchError) throw fetchError;
 
       if (!users || users.length === 0) {
-        return res.status(401).json({ error: "Sovereign identity node not found." });
+        recordFailedAttempt(ip);
+        return res.status(401).json({ error: "Invalid master credentials. Verification failed." });
       }
 
       const user = users[0];
@@ -872,8 +878,12 @@ async function startServer() {
         : (password === 'password' || password === user.password_hash);
 
       if (!isPasswordValid) {
+        recordFailedAttempt(ip);
         return res.status(401).json({ error: "Invalid master credentials. Verification failed." });
       }
+
+      // Success: reset attempts for this IP [1]
+      resetFailedAttempts(ip);
 
       // Generate Custom token
       const token = generateCustomToken({ uid: user.uid, email: user.email, name: user.name });
@@ -888,10 +898,14 @@ async function startServer() {
     }
   });
 
-  app.post("/api/auth/login-biometric", async (req, res) => {
+  // Custom biometric login endpoint with failed attempts tracking [1]
+  app.post("/api/auth/login-biometric", checkFailedAttempts, async (req, res) => {
     try {
       const { email, faceDescriptor } = req.body;
+      const ip = req.ip || 'unknown';
+
       if (!email) {
+        recordFailedAttempt(ip);
         return res.status(400).json({ error: "Missing identity email for biometric authentication." });
       }
 
@@ -906,6 +920,7 @@ async function startServer() {
       if (fetchError) throw fetchError;
 
       if (!users || users.length === 0) {
+        recordFailedAttempt(ip);
         return res.status(401).json({ error: "Sovereign identity node not found." });
       }
 
@@ -914,6 +929,7 @@ async function startServer() {
       // Verify the face_descriptor if it is present in Supabase for this user
       if (user.face_descriptor) {
         if (!faceDescriptor) {
+          recordFailedAttempt(ip);
           return res.status(400).json({ error: "No face descriptor provided for verification. Biometric login requires active facial scan." });
         }
 
@@ -925,6 +941,7 @@ async function startServer() {
             "db length:", dbDescriptor ? dbDescriptor.length : "null",
             "req length:", reqDescriptor ? reqDescriptor.length : "null"
           );
+          recordFailedAttempt(ip);
           return res.status(400).json({ error: "Biometric template dimension mismatch. Please enroll again." });
         }
 
@@ -938,9 +955,13 @@ async function startServer() {
         console.log(`[Biometric Login] Face match distance calculated: ${distance.toFixed(4)} (Threshold: <= 0.48)`);
 
         if (distance > 0.48) {
+          recordFailedAttempt(ip);
           return res.status(401).json({ error: "Biometric signature verification failed. Face does not match registered baseline." });
         }
       }
+
+      // Success: reset attempts for this IP [1]
+      resetFailedAttempts(ip);
 
       // Generate Custom token and authorize
       const token = generateCustomToken({ uid: user.uid, email: user.email, name: user.name });
@@ -1236,6 +1257,16 @@ async function startServer() {
       const uid = req.firebaseUser!.uid;
 
       const { data: userRecord, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('uid', uid)
+        .single();
+
+      if (userError || !userRecord) {
+        return res.status(404).json({ error: "User mapping unresolved." });
+      }
+
+      const { data, error } = await supabase
         .from('sessions')
         .select('*')
         .eq('user_id', userRecord.id);
