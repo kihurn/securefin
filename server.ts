@@ -244,33 +244,54 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(express.json());
+
+  // 1. Generate a secure, cryptographically random nonce for every incoming request
+  app.use((req, res, next) => {
+    res.locals.cspNonce = crypto.randomBytes(16).toString("base64");
+    next();
+  });
+
+  // 2. Configure Helmet with strict "Deny-by-Default" rules and cryptographic nonces
   app.use(
     helmet({
       contentSecurityPolicy: {
         directives: {
-          defaultSrc: ["'self'"],
+          // Deny everything by default (Remediates the "Deny by Default" scanner penalty)
+          defaultSrc: ["'none'"],
           objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
 
-          // 1. Connect Sources: Broadly allows Google & Firebase APIs
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
             "https://*.firebaseapp.com",
-            "https://*.googleapis.com",                // <-- BROADLY ALLOWS ALL GOOGLE AUTH APIs
+            "https://*.googleapis.com",
             "https://accounts.google.com",
             "https://securefin.onrender.com"
           ],
 
-          // 2. Script Sources: Broadly allows Google CDN scripts
+          // Remediates "Blocks execution of inline JavaScript" by replacing 'unsafe-inline' with a dynamic nonce
           scriptSrc: [
             "'self'",
-            "'unsafe-inline'",
-            "https://*.gstatic.com",                  // <-- BROADLY ALLOWS ALL GOOGLE STATIC SCRIPTS
+            (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`, // Authorizes only our signed scripts
+            "https://*.gstatic.com",
             "https://*.googleapis.com",
             "https://apis.google.com"
           ],
 
-          // 3. Image Sources: Allows Google user profiles and custom indicators
+          // Explicitly allows your Tailwind & motion/react runtime styles to load securely
+          styleSrc: [
+            "'self'",
+            "'unsafe-inline'"
+          ],
+
+          // Explicitly allows your local and icon fonts (like lucide-react) to load
+          fontSrc: [
+            "'self'",
+            "data:"
+          ],
+
           imgSrc: [
             "'self'",
             "data:",
@@ -280,14 +301,12 @@ async function startServer() {
             "https://lh3.googleusercontent.com"
           ],
 
-          // 4. Media Sources: Workstation camera streams
           mediaSrc: [
             "'self'",
             "blob:",
             "mediastream:"
           ],
 
-          // 5. Frame Sources: Allows Firebase Auth handler popup frames
           frameSrc: [
             "'self'",
             "https://*.firebaseapp.com",
@@ -297,13 +316,8 @@ async function startServer() {
           frameAncestors: ["'none'"],
         },
       },
-
-      // CRITICAL DIRECTIVE 1: Relaxes COOP so the Google popup can talk back to your React app
-      crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, // <-- RESOLVES THE BLANK HANGING POPUP
-
-      // CRITICAL DIRECTIVE 2: Relaxes COEP to prevent strict resource blocks on external CDNs
+      crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
       crossOriginEmbedderPolicy: false,
-
       strictTransportSecurity: {
         maxAge: 31536000,
         includeSubDomains: true,
@@ -313,7 +327,6 @@ async function startServer() {
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     })
   );
-
 
   // In-memory test user store for security suite verification
   interface SecurityTestUser {
@@ -633,7 +646,7 @@ async function startServer() {
     </div>
   </div>
 
-  <script type="module">
+<script type="module" nonce="${res.locals.cspNonce}">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
