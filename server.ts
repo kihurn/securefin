@@ -249,56 +249,61 @@ async function startServer() {
       contentSecurityPolicy: {
         directives: {
           defaultSrc: ["'self'"],
-          // Set object-src to none to improve the overall Observatory security score
           objectSrc: ["'none'"],
 
-          // 1. Connect Sources: Adds Google accounts connectivity for OAuth exchanges
+          // 1. Connect Sources: Broadly allows Google & Firebase APIs
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
             "https://*.firebaseapp.com",
-            "https://identitytoolkit.googleapis.com",
-            "https://securetoken.googleapis.com",
-            "https://accounts.google.com",              // <-- ADDED FOR OAUTH ENDPOINTS
+            "https://*.googleapis.com",                // <-- BROADLY ALLOWS ALL GOOGLE AUTH APIs
+            "https://accounts.google.com",
             "https://securefin.onrender.com"
           ],
 
-          // 2. Script Sources: Adds apis.google.com for Firebase auth helpers
+          // 2. Script Sources: Broadly allows Google CDN scripts
           scriptSrc: [
             "'self'",
             "'unsafe-inline'",
-            "https://www.gstatic.com",
-            "https://apis.google.com"                   // <-- ADDED FOR GOOGLE AUTH SIGN-IN
+            "https://*.gstatic.com",                  // <-- BROADLY ALLOWS ALL GOOGLE STATIC SCRIPTS
+            "https://*.googleapis.com",
+            "https://apis.google.com"
           ],
 
-          // 3. Image Sources: Whitelisted Google User Content
+          // 3. Image Sources: Allows Google user profiles and custom indicators
           imgSrc: [
             "'self'",
             "data:",
             "blob:",
             "https://api.dicebear.com",
-            "https://lh3.googleusercontent.com",
-            "https://*.googleusercontent.com"
+            "https://*.googleusercontent.com",
+            "https://lh3.googleusercontent.com"
           ],
 
-          // 4. Media Sources: Webcams and biometric scanners
+          // 4. Media Sources: Workstation camera streams
           mediaSrc: [
             "'self'",
             "blob:",
             "mediastream:"
           ],
 
-          // 5. Frame/Child Sources: Crucial to let Firebase Auth load its persistence iframe
+          // 5. Frame Sources: Allows Firebase Auth handler popup frames
           frameSrc: [
             "'self'",
-            "https://*.firebaseapp.com",                // <-- CRITICAL FOR FIREBASE AUTH IFRAME
-            "https://accounts.google.com"               // <-- CRITICAL FOR GOOGLE SIGN-IN INTERFACES
+            "https://*.firebaseapp.com",
+            "https://accounts.google.com"
           ],
 
-          // 6. Clickjacking Prevention
           frameAncestors: ["'none'"],
         },
       },
+
+      // CRITICAL DIRECTIVE 1: Relaxes COOP so the Google popup can talk back to your React app
+      crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }, // <-- RESOLVES THE BLANK HANGING POPUP
+
+      // CRITICAL DIRECTIVE 2: Relaxes COEP to prevent strict resource blocks on external CDNs
+      crossOriginEmbedderPolicy: false,
+
       strictTransportSecurity: {
         maxAge: 31536000,
         includeSubDomains: true,
@@ -308,7 +313,6 @@ async function startServer() {
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     })
   );
-
 
 
   // In-memory test user store for security suite verification
