@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from "express";
-import path from "path";
-import fs from "fs";
+import path from "node:path";
+import fs from "node:fs";
 import crypto from "node:crypto";
 import { createServer as createViteServer } from "vite";
 import { supabase } from "./src/lib/supabase.ts";

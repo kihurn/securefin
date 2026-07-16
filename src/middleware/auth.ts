@@ -38,20 +38,25 @@ export const requireAuth = async (
     return res.status(401).json({ error: 'Access denied: Unauthorized: Missing token' });
   }
 
-  const token = authHeader.split('Bearer ')[1];
+  // Robust parsing: extract token cleanly regardless of variable spacing
+  const token = authHeader.substring(7).trim();
 
   // 1. Try custom HS256 JWT
-  const customUser = verifyCustomToken(token);
+  const customUser = verifyCustomToken(token) as any;
   if (customUser) {
+    // Current timestamp in seconds for fallback calculations
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+
+    // Map properties dynamically using claims decoded from your custom token
     req.firebaseUser = {
       uid: customUser.uid,
       email: customUser.email,
       name: customUser.name,
       aud: '',
-      auth_time: 0,
-      exp: 0,
+      auth_time: customUser.iat || nowInSeconds,
+      exp: customUser.exp || (nowInSeconds + 3600), // Dynamic expiration (falls back to 1 hour window)
       firebase: { identities: {}, sign_in_provider: 'custom' },
-      iat: 0,
+      iat: customUser.iat || nowInSeconds,          // Dynamic issued-at timestamp
       iss: '',
       sub: customUser.uid,
     } as any;
