@@ -261,43 +261,49 @@ async function startServer() {
           baseUri: ["'self'"],
           formAction: ["'self'"],
 
+          // 1. Connect Sources: Added cdn.jsdelivr.net to permit model fallback downloads
           connectSrc: [
             "'self'",
             "https://*.supabase.co",
             "https://*.firebaseapp.com",
             "https://*.googleapis.com",
             "https://accounts.google.com",
-            "https://securefin.onrender.com"
+            "https://securefin.onrender.com",
+            "https://cdn.jsdelivr.net"                 // <-- ADDED FOR MODEL CDN FALLBACKS
           ],
 
-          // 1. Add 'unsafe-eval' so TensorFlow.js can compile its mathematical engines
+          // 2. Script Sources: Permits compiling neural weights
           scriptSrc: [
             "'self'",
             (req: any, res: any) => `'nonce-${res.locals.cspNonce}'`,
             "https://*.gstatic.com",
             "https://*.googleapis.com",
             "https://apis.google.com",
-            "'unsafe-eval'"                             // <-- CRITICAL FOR TENSORFLOW.JS / FACE-API
+            "'unsafe-eval'"
           ],
 
-          // 2. Add Worker/Child Sources so Face-API can process frames in background threads
+          // 3. Worker Sources: Parallel background threads
           workerSrc: [
             "'self'",
-            "blob:"                                     // <-- CRITICAL FOR TF.JS BACKGROUND WORKERS
+            "blob:"
           ],
           childSrc: [
             "'self'",
             "blob:"
           ],
 
+          // 4. Style Sources: Whitelisted fonts.googleapis.com
           styleSrc: [
             "'self'",
-            "'unsafe-inline'"
+            "'unsafe-inline'",
+            "https://fonts.googleapis.com"            // <-- ADDED FOR GOOGLE FONTS CSS
           ],
 
+          // 5. Font Sources: Whitelisted fonts.gstatic.com
           fontSrc: [
             "'self'",
-            "data:"
+            "data:",
+            "https://fonts.gstatic.com"               // <-- ADDED FOR GOOGLE FONTS WEBFONTS
           ],
 
           imgSrc: [
@@ -335,6 +341,7 @@ async function startServer() {
       referrerPolicy: { policy: "strict-origin-when-cross-origin" },
     })
   );
+
 
   // In-memory test user store for security suite verification
   interface SecurityTestUser {
