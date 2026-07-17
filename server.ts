@@ -635,7 +635,7 @@ async function startServer() {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Sovereign Identity Authorization</title>
+  <title>Identity Authorization</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body {
@@ -695,7 +695,7 @@ async function startServer() {
         const googleAccessToken = credential.accessToken;
 
         document.getElementById('auth-title').textContent = "Verification Successful";
-        document.getElementById('auth-subtitle').textContent = "Sovereign Identity has been synchronized with the FinTrust ledger.";
+        document.getElementById('auth-subtitle').textContent = "Identity has been synchronized with the FinTrust ledger.";
         document.getElementById('icon-container').className = "p-3 bg-green-500/10 rounded-xl text-green-400";
         document.getElementById('icon-container').innerHTML = \`<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>\`;
 
@@ -773,7 +773,7 @@ async function startServer() {
       if (fetchError) throw fetchError;
 
       if (existingUsers && existingUsers.length > 0) {
-        return res.status(400).json({ error: "Sovereign identity node for this email is already registered." });
+        return res.status(400).json({ error: "identity node for this email is already registered." });
       }
 
       // Hash password
@@ -894,7 +894,7 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Custom login failed:", error);
-      res.status(500).json({ error: "Sovereign identity gateway verification failed.", details: error.message });
+      res.status(500).json({ error: "identity gateway verification failed.", details: error.message });
     }
   });
 
@@ -921,7 +921,7 @@ async function startServer() {
 
       if (!users || users.length === 0) {
         recordFailedAttempt(ip);
-        return res.status(401).json({ error: "Sovereign identity node not found." });
+        return res.status(401).json({ error: "identity node not found." });
       }
 
       const user = users[0];
@@ -972,7 +972,7 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("Biometric login failed:", error);
-      res.status(500).json({ error: "Biometric sovereign gateway verification failed.", details: error.message });
+      res.status(500).json({ error: "Biometric gateway verification failed.", details: error.message });
     }
   });
 
@@ -1073,7 +1073,7 @@ async function startServer() {
       res.json(normalizeUser(data));
     } catch (error: any) {
       console.error("Fetch profile failed:", error);
-      res.status(500).json({ error: "Failed to fetch sovereign profile data." });
+      res.status(500).json({ error: "Failed to fetch profile data." });
     }
   });
 
@@ -1115,7 +1115,7 @@ async function startServer() {
       res.json(normalizeUser(data));
     } catch (error: any) {
       console.error("Update profile failed:", error);
-      res.status(500).json({ error: "Failed to update sovereign profile node.", details: error.message });
+      res.status(500).json({ error: "Failed to update profile node.", details: error.message });
     }
   });
 

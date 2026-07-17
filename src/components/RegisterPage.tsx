@@ -203,7 +203,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
         });
 
         if (!response.ok) {
-          throw new Error('Failed to synchronize sovereign identity node with the database ledger.');
+          throw new Error('Failed to synchronize identity node with the database ledger.');
         }
 
         const profile = await response.json();
@@ -230,7 +230,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || 'Failed to synchronize sovereign identity node with the database ledger.');
+          throw new Error(errorData.error || 'Failed to synchronize identity node with the database ledger.');
         }
 
         const { profile, token } = await response.json();
@@ -288,7 +288,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
               Create Secured Registry Profile
             </h2>
             <p className="text-xs text-slate-400 leading-normal max-w-sm mx-auto">
-              Initialize a sovereign institutional node and deploy master access key signatures to secure trust reserves.
+              Initialize a institutional node and deploy master access key signatures to secure trust reserves.
             </p>
           </div>
 
@@ -442,7 +442,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                   <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl z-50 space-y-3">
                     <Loader2 className="h-8 w-8 text-indigo-400 animate-spin" />
                     <span className="text-xs font-mono text-slate-300 font-bold uppercase tracking-wider text-center">
-                      Deploying Sovereign Node...
+                      Deploying Node...
                     </span>
                     <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest text-center">
                       Synchronizing ledger authority
@@ -551,9 +551,8 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                       playClickSound();
                       setTermsAccepted(!termsAccepted);
                     }}
-                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition ${
-                      termsAccepted ? 'bg-brand-primary border-transparent text-white' : 'border-slate-700 bg-slate-900'
-                    }`}
+                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition ${termsAccepted ? 'bg-brand-primary border-transparent text-white' : 'border-slate-700 bg-slate-900'
+                      }`}
                     id="google-terms-checkbox"
                   >
                     {termsAccepted && <Check className="h-3 w-3 stroke-[3]" />}
@@ -633,9 +632,8 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                         {[1, 2, 3, 4].map((i) => (
                           <div
                             key={i}
-                            className={`h-full flex-1 transition-colors duration-350 ${
-                              i <= strength.score ? strength.color : 'bg-slate-800'
-                            }`}
+                            className={`h-full flex-1 transition-colors duration-350 ${i <= strength.score ? strength.color : 'bg-slate-800'
+                              }`}
                           ></div>
                         ))}
                       </div>
@@ -687,9 +685,8 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
                       playClickSound();
                       setTermsAccepted(!termsAccepted);
                     }}
-                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition ${
-                      termsAccepted ? 'bg-brand-primary border-transparent text-white' : 'border-slate-700 bg-slate-900'
-                    }`}
+                    className={`h-4.5 w-4.5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition ${termsAccepted ? 'bg-brand-primary border-transparent text-white' : 'border-slate-700 bg-slate-900'
+                      }`}
                     id="register-terms-checkbox"
                   >
                     {termsAccepted && <Check className="h-3 w-3 stroke-[3]" />}
@@ -732,7 +729,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({
 
         {/* Footnote */}
         <p className="mt-6 text-center text-[10px] text-slate-500 leading-normal" id="register-disclaimer">
-          SecureFin operates under Swiss Financial Secrecy Guidelines (FISA). Institutional keys remain sovereign.
+          SecureFin operates under Swiss Financial Secrecy Guidelines (FISA).
         </p>
       </div>
     </div>

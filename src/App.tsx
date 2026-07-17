@@ -81,7 +81,7 @@ export default function App() {
       let profileRes = await fetch('/api/user/profile', { headers });
 
       if (profileRes.status === 404) {
-        console.log('User profile not found. Triggering sovereign identity synchronization...');
+        console.log('User profile not found. Triggering identity synchronization...');
         const syncRes = await fetch('/api/auth/sync', {
           method: 'POST',
           headers: {
@@ -253,7 +253,7 @@ export default function App() {
         body: JSON.stringify({ targetUid, newRole })
       });
       if (res.ok) {
-        triggerToast(`Sovereign role updated to: ${newRole.toUpperCase()}`);
+        triggerToast(`role updated to: ${newRole.toUpperCase()}`);
         fetchAdminData();
       } else {
         const err = await res.json();
@@ -298,7 +298,7 @@ export default function App() {
 
   const handleRunAllSecurityModules = async () => {
     playClickSound();
-    triggerToast('Initiating full sovereign hardware security suite run...');
+    triggerToast('Initiating full hardware security suite run...');
     const modules = getSecurityModules();
     for (const mod of modules) {
       if (mod.status === 'active') {
@@ -414,7 +414,7 @@ export default function App() {
           const savedTx = await response.json();
           setTransactions((prev) => [savedTx, ...prev]);
         } else {
-          throw new Error('Sovereign ledger failed to write block.');
+          throw new Error('ledger failed to write block.');
         }
       } else {
         // Fallback for simulation
@@ -489,7 +489,7 @@ export default function App() {
           const profile = await response.json();
           setUserProfile(profile);
         } else {
-          let errMsg = 'Sovereign vault registry update rejected.';
+          let errMsg = 'vault registry update rejected.';
           try {
             const errData = await response.json();
             if (errData && errData.error) {
@@ -626,13 +626,13 @@ export default function App() {
                 <button
                   onClick={() => handleTabChange('admin')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'admin'
-                      ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                      : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
                     }`}
                   id="sidebar-tab-admin"
                 >
                   <Shield className="h-4.5 w-4.5 text-brand-primary" />
-                  Sovereign Admin Portal
+                  Admin Portal
                 </button>
               </>
             ) : (
@@ -644,8 +644,8 @@ export default function App() {
                 <button
                   onClick={() => handleTabChange('dashboard')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'dashboard'
-                      ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                      : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
                     }`}
                   id="sidebar-tab-dashboard"
                 >
@@ -656,8 +656,8 @@ export default function App() {
                 <button
                   onClick={() => handleTabChange('ledger')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'ledger'
-                      ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                      : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
                     }`}
                   id="sidebar-tab-ledger"
                 >
@@ -668,8 +668,8 @@ export default function App() {
                 <button
                   onClick={() => handleTabChange('payments')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'payments'
-                      ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                      : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
                     }`}
                   id="sidebar-tab-payments"
                 >
@@ -680,8 +680,8 @@ export default function App() {
                 <button
                   onClick={() => handleTabChange('insights')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'insights'
-                      ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                      : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
                     }`}
                   id="sidebar-tab-insights"
                 >
@@ -692,8 +692,8 @@ export default function App() {
                 <button
                   onClick={() => handleTabChange('settings')}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'settings'
-                      ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
-                      : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
+                    ? 'bg-brand-secondary-container text-brand-primary shadow-sm'
+                    : 'hover:bg-slate-50 text-slate-600 hover:text-slate-900'
                     }`}
                   id="sidebar-tab-settings"
                 >
@@ -767,7 +767,7 @@ export default function App() {
                   Institutional Terminal
                 </span>
                 <h2 className="text-lg font-extrabold text-slate-900 tracking-tight capitalize" id="portal-tab-header">
-                  {activeTab === 'dashboard' ? 'Core Portfolio' : activeTab === 'ledger' ? 'Immutable Activity Ledger' : activeTab === 'payments' ? 'Treasury Reserves' : activeTab === 'insights' ? 'Strategic Intelligence' : activeTab === 'settings' ? 'Security Registry' : 'Sovereign Admin Portal'}
+                  {activeTab === 'dashboard' ? 'Core Portfolio' : activeTab === 'ledger' ? 'Immutable Activity Ledger' : activeTab === 'payments' ? 'Treasury Reserves' : activeTab === 'insights' ? 'Strategic Intelligence' : activeTab === 'settings' ? 'Security Registry' : 'Admin Portal'}
                 </h2>
               </div>
             </div>
@@ -838,7 +838,7 @@ export default function App() {
                           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-xs font-bold tracking-tight transition ${activeTab === 'admin' ? 'bg-brand-secondary-container text-brand-primary shadow-sm' : 'hover:bg-slate-50 text-slate-600'}`}
                         >
                           <Shield className="h-4.5 w-4.5 text-brand-primary" />
-                          Sovereign Admin Portal
+                          Admin Portal
                         </button>
                       ) : (
                         <>
@@ -1141,7 +1141,7 @@ export default function App() {
                           ${balances.reserve.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </div>
                         <p className="text-[10px] text-slate-400 leading-normal font-medium">
-                          Capital allocations and high-grade sovereign trust distributions.
+                          Capital allocations and high-grade trust distributions.
                         </p>
                       </div>
                     </div>
@@ -1280,8 +1280,8 @@ export default function App() {
                       <button
                         onClick={handleToggleCardFreeze}
                         className={`w-full py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer ${cardFrozen
-                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
-                            : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
+                          ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                          : 'bg-red-50 hover:bg-red-100 text-red-700 border border-red-200'
                           }`}
                         id="btn-toggle-freeze"
                       >
@@ -1517,7 +1517,7 @@ export default function App() {
                     <div className="border-b border-slate-100 pb-4" id="payments-executor-header">
                       <h3 className="font-extrabold text-slate-950 text-base">Disburse Institutional Reserves</h3>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        Direct real-time settlement across authorized sovereign vaults, corporations, and real-estate trustees.
+                        Direct real-time settlement across authorized vaults, corporations, and real-estate trustees.
                       </p>
                     </div>
 
@@ -1937,7 +1937,7 @@ export default function App() {
               </div>
             )}
 
-            {/* TAB 6: SOVEREIGN ADMIN PORTAL */}
+            {/* TAB 6: ADMIN PORTAL */}
             {activeTab === 'admin' && (
               <div className="space-y-6" id="tab-admin-portal">
 
@@ -1948,7 +1948,7 @@ export default function App() {
                     <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                       <div className="flex items-center gap-2">
                         <Cpu className="h-4.5 w-4.5 text-brand-primary" />
-                        <span className="text-xs font-bold text-slate-800">Sovereign Node Health</span>
+                        <span className="text-xs font-bold text-slate-800">Node Health</span>
                       </div>
                       <span className="px-2 py-0.5 rounded text-[9px] font-bold font-mono tracking-wider bg-emerald-50 text-emerald-600 border border-emerald-100 animate-pulse">
                         ONLINE
@@ -2086,7 +2086,7 @@ export default function App() {
                       <div className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-user-registry">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                           <div>
-                            <h3 className="font-extrabold text-slate-900 text-sm">Sovereign Identity Registry</h3>
+                            <h3 className="font-extrabold text-slate-900 text-sm">Identity Registry</h3>
                             <p className="text-[10px] text-slate-400">Manage directory records and permission ring mappings.</p>
                           </div>
                           <div className="relative">
@@ -2166,7 +2166,7 @@ export default function App() {
                       <div className="bg-white border border-slate-150 rounded-2xl p-5 space-y-4 shadow-sm" id="admin-shield-controller">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                           <div>
-                            <h3 className="font-extrabold text-slate-900 text-sm">Sovereign Protection Sweeps</h3>
+                            <h3 className="font-extrabold text-slate-900 text-sm">Protection Sweeps</h3>
                             <p className="text-[10px] text-slate-400">Validate active defense signatures and execute sweeps on demand.</p>
                           </div>
                           <button
@@ -2424,9 +2424,9 @@ export default function App() {
                       Committee Recommendations
                     </h5>
                     <ul className="text-xs text-slate-500 space-y-2 list-disc pl-4 leading-relaxed font-semibold">
-                      <li>Maintain Q4 allocation structures inside local sovereign currency brackets.</li>
+                      <li>Maintain Q4 allocation structures inside local currency brackets.</li>
                       <li>Utilize fractional secure key nodes for cross-border settlements over $50k.</li>
-                      <li>Align long-term sovereign assets with standard Basel compliance criteria.</li>
+                      <li>Align long-term assets with standard Basel compliance criteria.</li>
                     </ul>
                   </div>
                 </div>

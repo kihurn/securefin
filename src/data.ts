@@ -165,7 +165,7 @@ export const initialInsights: InsightArticle[] = [
     id: 'INS-2',
     category: 'Market Alert',
     title: 'Global Equity Pivot Trends',
-    description: 'Institutional capital is shifting heavily toward green sovereign bonds, infrastructure funds, and next-generation sovereign debt indexes.',
+    description: 'Institutional capital is shifting heavily toward green bonds, infrastructure funds, and next-generation debt indexes.',
     imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAOLLxcPjzSHgbV_hrvel6UvEWhxcsf_1kJtAybOMHdQbrQoqHep4rolkhLgp51tNJ7GpAIL4q32nw2aKeKWBtCoENp3Mpq6N_MztwjxGHksNUdK8fknp7FsWfTxAd7de-C0_K5X-gYIM9vn8VPaYawWj6mXSS0fydqAnUjTPKFAegtZvtNI3IQSFyV4g5TcOaVU1B2IMCBp18Pk-4CpNMIf8na-HqZ-RCa4ePp5-XtTo8dNi54EYSdXkQyqAqYf4eB2LdZRTpn8r8h'
   },
   {

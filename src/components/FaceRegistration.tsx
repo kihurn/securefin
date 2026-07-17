@@ -84,7 +84,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       console.error('Webcam permission denied or unavailable:', err);
       setPermissionGranted(false);
       setErrorMessage(
-        'Webcam access is required for Sovereign Facial biometric validation. Please grant permission in your browser.'
+        'Webcam access is required for Facial biometric validation. Please grant permission in your browser.'
       );
       playErrorSound();
     }
@@ -125,7 +125,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       // Keep polling the face detector every 300ms until we successfully get a descriptor
       while (isMountedRef.current) {
         if (!videoRef.current) break;
-        
+
         try {
           descriptor = await generateFaceDescriptor(videoRef.current);
         } catch (scanErr) {
@@ -169,7 +169,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       setBaselineCaptured(true);
       setIsScanning(false);
       playSuccessSound();
-      
+
       // Fire callback to register flow
       setTimeout(() => {
         onCaptureComplete(descriptor!);
@@ -189,7 +189,7 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
       <div className="text-center space-y-2">
         <h3 className="font-extrabold text-white text-base flex items-center justify-center gap-2">
           <Sparkles className="h-4.5 w-4.5 text-indigo-400" />
-          Sovereign Face Biometrics Setup
+          Face Biometrics Setup
         </h3>
         <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
           Enroll your workstation facial node identity to activate continuous, browser-secure session shielding.
@@ -231,9 +231,8 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
           autoPlay
           playsInline
           muted
-          className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-350 ${
-            permissionGranted && !isLoadingModels ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-350 ${permissionGranted && !isLoadingModels ? 'opacity-100' : 'opacity-0'
+            }`}
           id="webcam-preview"
         />
 
@@ -241,10 +240,9 @@ export const FaceRegistration: React.FC<FaceRegistrationProps> = ({
         {permissionGranted && !isLoadingModels && !baselineCaptured && (
           <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-10">
             {/* Round Reticle Guide */}
-            <div className={`w-52 h-52 rounded-full border-2 border-dashed transition-colors duration-350 ${
-              isScanning ? 'border-brand-primary/80 animate-pulse' : 'border-slate-600/60'
-            }`} />
-            
+            <div className={`w-52 h-52 rounded-full border-2 border-dashed transition-colors duration-350 ${isScanning ? 'border-brand-primary/80 animate-pulse' : 'border-slate-600/60'
+              }`} />
+
             {/* Horizontal scanning laser */}
             {isScanning && (
               <motion.div

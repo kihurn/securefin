@@ -85,7 +85,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
     } catch (error: any) {
       console.error('Biometric verification failed:', error);
       setIsLoading(false);
-      setErrorMessage(error.message || 'Sovereign biometric authentication rejected.');
+      setErrorMessage(error.message || 'biometric authentication rejected.');
       playErrorSound();
     }
   };
@@ -111,7 +111,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
       });
 
       if (!response.ok) {
-        throw new Error('Failed to synchronize sovereign identity node with the ledger.');
+        throw new Error('Failed to synchronize identity node with the ledger.');
       }
 
       const userProfile = await response.json();
@@ -171,7 +171,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess, onBackToHo
 
       if (!response.ok) {
         const errData = await response.json();
-        throw new Error(errData.error || 'Invalid credentials or sovereign node validation failed.');
+        throw new Error(errData.error || 'Invalid credentials or node validation failed.');
       }
 
       setIsLoading(false);

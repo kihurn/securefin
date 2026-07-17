@@ -256,7 +256,7 @@ export function BiometricVerificationModal({ onClose, onSuccess, userEmail = "al
               <ShieldCheck className="h-4.5 w-4.5" />
             </div>
             <div>
-              <h3 className="text-white font-extrabold text-sm tracking-tight leading-none">FinTrust Sovereign Vault</h3>
+              <h3 className="text-white font-extrabold text-sm tracking-tight leading-none">FinTrust Vault</h3>
               <span className="text-[9px] font-mono font-bold text-slate-500 uppercase tracking-widest mt-1 block">Biometric Gateway v1.0</span>
             </div>
           </div>
@@ -294,7 +294,7 @@ export function BiometricVerificationModal({ onClose, onSuccess, userEmail = "al
                 </div>
 
                 <div className="space-y-2">
-                  <h4 className="text-white font-bold text-base tracking-tight">Sovereign Identity Verification</h4>
+                  <h4 className="text-white font-bold text-base tracking-tight">Identity Verification</h4>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
                     Verify ownership of the master multi-sig vault key. This triggers a secure handshake using your computer's local hardware authenticators.
                   </p>
@@ -366,7 +366,7 @@ export function BiometricVerificationModal({ onClose, onSuccess, userEmail = "al
                 <div className="space-y-2">
                   <h4 className="text-emerald-400 font-extrabold text-base">Hardware Key Verified</h4>
                   <p className="text-xs text-slate-300 max-w-xs">
-                    Sovereign identity signature verified successfully via platform authenticator.
+                    identity signature verified successfully via platform authenticator.
                   </p>
                   <div className="text-[10px] font-mono text-slate-500 bg-slate-900/50 px-3 py-1 rounded border border-slate-800/50 mt-4 inline-block">
                     KEY_STATUS: MASTER_SYNCED_OK

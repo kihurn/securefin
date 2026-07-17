@@ -29,7 +29,7 @@ export function verifyCustomToken(token: string): { uid: string; email: string; 
       .update(`${header}.${body}`)
       .digest('base64url');
     if (signature !== expectedSignature) return null;
-    
+
     const decodedBody = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
     if (decodedBody.exp && decodedBody.exp < Math.floor(Date.now() / 1000)) {
       return null;

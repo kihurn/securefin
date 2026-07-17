@@ -1,0 +1,248 @@
+(base) PS C:\Users\User\OneDrive\Documents\SSS-SecureFin> git log 
+commit 95c3ce8a6dbf9a5728fc292de4c7a5bb3279d362 (HEAD -> main, origin/main)
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 07:17:25 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.4 ratelimiter fix
+
+commit da54da5acdadd0a5bb576e77fffa0d6acb8fe691
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 07:09:06 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.4 ratelimiter fix
+
+commit ccb19dcdf88fce6691b4f2f4b22582d8db508290
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 01:45:21 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.3 camera fix
+
+commit 80c18f40da1564e3ae2c063130db6e753963726c
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 01:39:47 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.3 camera fix
+
+commit d57c977efeba02570c9dfbc1094bbc92ee87858d
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 01:30:48 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.2 rate limiter fix)
+
+commit 04967ee349e505f2d1329d929667c324798c44ed
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:59:15 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed google auth)
+
+commit fa4ddbc593aa51286086919deb0e81359d349594
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:54:10 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed google auth)
+
+commit 7da9d1ecf93454874f154da2fc5fb5e79ff8a2fb
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:49:23 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed security flaws)
+
+commit e0e0b9129c12d9610922ff631dc6cc2bfc158c0d
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:42:01 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed security flaws)
+
+commit ae605fed19d146a6970ebabb57646930747c0adb
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:35:39 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed security flaws)
+
+commit ff0a03a3b7b790d8fd051aa243f6abab31e9b033
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:27:35 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed security flaws)
+
+commit fedb18abf44d39c638da54ff60c612290f36332c
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:22:34 2026 +0800
+
+    hotfix v5.2.1hotfix v5.2.1 (fixed security flaws)
+
+commit 6ef2e8b65fddd57a4eb5c2b0c4542f82b7bcd725
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 17 00:20:45 2026 +0800
+
+    hotfix v5.2.1 (fixed security flaws)
+
+commit 0ce19a4573fe566104b194b79c4537e65c293cd1
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 16 23:41:14 2026 +0800
+
+    hotfix v5.2
+
+commit 961f5d8800f165d2b2c7c26293617bee1c192a40
+Merge: 721ed49 4d27a59
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 16 23:41:04 2026 +0800
+
+    hotfix v5.2
+
+commit 4d27a593f9117e6c80fc8aaa9cf0e4a298741e57
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 16:22:16 2026 +0800
+
+    hotfix5.1.5
+
+commit fa1a861bb9eeed5917fa9f18efde195611970f84
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 15:22:42 2026 +0800
+
+    hotfix5.1.4
+
+commit d4a7e02e1eb74a8c39e83333cd641b06e118bbf6
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 15:08:52 2026 +0800
+
+    hotfix5.1.2
+
+commit 65c9e0db0351248d496d8e0448627cf57423648c
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 14:57:44 2026 +0800
+
+    hotfix5.1.2
+
+commit 74260264391ff6fc34e69f3e443192de7fe2f3df
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 14:19:57 2026 +0800
+
+    ver5.1.2
+
+commit 9f48e6888c23869afbcef73900ab25c4751e5be6
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 10:49:34 2026 +0800
+
+    ver5.2
+
+commit c76cf6b29d2091e16d2ef9438c9668d28c355df4
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 10:49:11 2026 +0800
+
+    ver5.2
+
+commit 83cf81a1ebee85e8d2f1ea6ceff7ccb325d0070d
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Wed Jul 8 09:49:53 2026 +0800
+
+    ver 5.1
+
+commit 9db93a894c364adf88dbc4fea1e098cadd86fa97
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Mon Jul 6 15:08:33 2026 +0800
+
+    fix(ios): mount hidden video in DOM for iOS Safari WebKit frame decoding compatibility
+
+commit c818bb8a6acb635277d93519153dced04c3b7cad
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Mon Jul 6 14:56:21 2026 +0800
+
+    fix: replace blind 2s timeout with canplay event wait to fix Box.constructor null error in background scan
+
+commit ac41d5dfb16cc342ae5226539e518ee1d17c60da
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Mon Jul 6 14:52:50 2026 +0800
+
+    fix: gate capture button behind onCanPlay to prevent null bounding box error
+
+commit 9f0e1a4b75837cd138f98559701db589cda7924f
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Mon Jul 6 14:49:17 2026 +0800
+
+    ver3.1
+
+commit e5c3f0ecc0d2f78b8ff0d5e82489b18d366a31db
+Author: Ki Hurn <KiHurn@Kihurn-Mac.local>
+Date:   Mon Jul 6 14:25:51 2026 +0800
+
+    ver3
+
+commit 721ed49b330e6560382522ce3f38ec3c5bef2eff
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 3 18:33:49 2026 +0800
+
+    new ver
+
+commit 0d001a8ba82bdebca60f96e5dab9e8e608f3cada
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 3 18:32:44 2026 +0800
+
+    new ver
+
+commit 087c5fd0cd81a7d9fd7be9376b7ac79a0718842a
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Fri Jul 3 18:12:48 2026 +0800
+
+    new ver
+
+commit 1fef2ac76e8029647f5db2cf6f9c8f0a8b7a92c3
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:44:06 2026 +0800
+
+    v2
+
+commit 3cf699ce4c2d1bdfa67c2c7ee28c3abf2e9bc478
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:24:43 2026 +0800
+
+    v1
+
+commit 0c0f97d7a5716768e2431013b290ac80bd5be25b
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:09:33 2026 +0800
+
+    readme
+
+commit 4331a25a366c9e6a914c0d6a1c78a26f5970ccb4
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:08:55 2026 +0800
+
+    readme
+
+commit 1a401ebac2dd2c7cf4b12edd409573472a04fdda
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:08:13 2026 +0800
+
+    readme
+
+commit 40057524ef5158de59aa5cbf27cc42260fe4e90d
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:07:06 2026 +0800
+
+    readme
+
+commit 420e37cf544d261ed004a0e09d3bd6b4fd3395dd
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:06:50 2026 +0800
+
+    readme
+
+commit 5706e364eb57dd8d0b331d06a296d53828342751
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:05:54 2026 +0800
+
+    readme
+
+commit 0cd8adb535d144fdec9b6280c67d56e11c5328d8
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 01:04:46 2026 +0800
+
+    readme
+
+commit 556c5c654c6c29e53d202d6156a8aa86e353c245
+Author: kihurn <wongkihurn@gmail.com>
+Date:   Thu Jul 2 00:56:34 2026 +0800
+
+    first commit
+(END)

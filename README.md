@@ -1,4 +1,6 @@
-Secure Software System Assignment
+School of Computer Science
+ITS69405 Software Secure Systems
+Group Assignment 2, Tutorial 2
 
 Group No. 4
 
@@ -11,13 +13,11 @@ Group No. 4
 
 # SecureFin
 
-SecureFin is a highly secure, next-generation personal finance management application featuring **Continuous Biometric (Facial) Verification**, an automated **Zero-Trust Security Diagnostics Framework**, and a **Cryptographically-Chained Immutable Transaction Ledger**.
-
-Built with a modern full-stack architecture using **React, Express, and TypeScript**, SecureFin enforces client-side on-device biometric tracking and robust backend security controls to mitigate real-world vulnerabilities such as session hijacking, ledger tampering, brute-force attacks, and cross-site scripting (XSS).
+SecureFin is an institutional-grade corporate treasury and personal finance portal styled as a zero-trust corporate workstation. It implements real-time client-side Continuous Biometric (Facial) Verification, an automated backend Security Diagnostics Framework, and a Cryptographically-Chained Immutable Transaction Ledger. The application utilizes a full-stack architecture built on React 19, Express, TypeScript, and a Supabase/Firebase relational hybrid backend. It enforces on-device biometric tracking and robust server-side security middleware to mitigate real-world vulnerabilities such as session hijacking, ledger tampering, brute-force attacks, and Cross-Site Scripting (XSS).
 
 ---
 
-## 🚀 1. Setup & Installation Guide
+## 1. Setup & Installation Guide
 
 ### Prerequisites
 - **Node.js**: Version 18.0.0 or higher is required.
@@ -60,7 +60,7 @@ Built with a modern full-stack architecture using **React, Express, and TypeScri
 
 ---
 
-## ⚙️ 2. Configuration & Security-Relevant Parameters
+## 2. Configuration & Security-Relevant Parameters
 
 SecureFin implements a comprehensive security matrix governing key storage, environment parameters, and secure network transport rules.
 
@@ -91,7 +91,7 @@ NODE_ENV=development
 
 ---
 
-## 🏃‍♂️ 3. Running the Prototype
+## 3. Running the Prototype
 
 ### A. Run in Development Mode
 To start the live, hot-reloading development server which runs both the Express backend and the Vite frontend on Port `3000`:
@@ -127,7 +127,7 @@ The test suite automatically starts a local test server instance and runs the fo
 
 ---
 
-## 🛡️ 4. Functional & Non-Functional Features
+## 4. Functional & Non-Functional Features
 
 ### Functional Features
 - **Biometric Enrollment & Lock**: Programmatic enrollment of a face baseline via the user's webcam, with visual verification.
@@ -142,7 +142,7 @@ The test suite automatically starts a local test server instance and runs the fo
 
 ---
 
-## 🔐 5. Comprehensive Breakdown of Security Features
+## 5. Comprehensive Breakdown of Security Features
 
 ### 1. Continuous Biometric Verification Model
 The centerpiece of SecureFin's defense is the `FaceVerificationProvider` located in `src/FaceVerificationContext.tsx`. It runs a continuous, background surveillance thread:
@@ -172,13 +172,9 @@ To protect user records from unauthorized database modifications, transactions a
 - Enforces system activity logs written locally to `logs/security.log`.
 - Redacts all sensitive variables (such as plaintext passwords) to `[REDACTED]` prior to file write.
 
-### 6. Input Sanitization & Error Shielding
+### 6. Input Sanitization & Error Handling
 - Strips harmful HTML, XML, and `<script>` nodes to block Cross-Site Scripting (XSS).
 - Sanitizes and escapes input strings to block SQL/NoSQL injections.
 - Enforces global error handling, catching all unhandled system failures and mapping them to a generic shielded payload `An unexpected error occurred. Please try again later.`, preventing stack trace information leakage.
 
----
-
-## 📄 License
-This project is licensed under the MIT License.
 
